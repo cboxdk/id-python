@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cbox-id-client"
+version = "0.1.0"
+description = "Turnkey Cbox ID client for Python — OpenID Connect login (PKCE + id_token verification via JWKS), hosted profile-management redirect, machine tokens, UserInfo, RFC 7662 introspection, and webhook signature verification."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Sylvester Damgaard", email = "sn@cbox.dk" }]
+keywords = ["oidc", "openid-connect", "oauth2", "pkce", "authentication", "sso", "cbox-id"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+]
+dependencies = [
+  "httpx>=0.27",
+  "pyjwt[crypto]>=2.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/cboxdk/id-python"
+Repository = "https://github.com/cboxdk/id-python"
+Issues = "https://github.com/cboxdk/id-python/issues"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cbox_id"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
