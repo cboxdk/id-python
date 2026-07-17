@@ -12,7 +12,13 @@ import httpx
 import jwt
 from jwt.algorithms import RSAAlgorithm
 
-from .errors import AuthenticationError, ConfigurationError, InvalidStateError
+from .authz import AuthzManifest
+from .errors import (
+    AuthenticationError,
+    ConfigurationError,
+    InvalidStateError,
+    ManifestPublishError,
+)
 from .models import AuthorizationRequest, CboxIdConfig, CboxUser
 from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_webhook
@@ -198,6 +204,37 @@ class CboxIdClient:
         )
         if response.status_code >= 400:
             raise AuthenticationError("Introspection request failed.")
+        result: dict[str, Any] = response.json()
+        return result
+
+    def publish_manifest(self, manifest: AuthzManifest) -> dict[str, Any]:
+        """Publish this app's declared roles & permissions manifest to Cbox ID.
+
+        Run this on deploy. It mints a client-credentials token with the
+        ``apps.manifest`` scope, then POSTs the manifest to
+        ``{issuer}/api/v1/apps/manifest``. The app owns what roles mean; Cbox ID owns
+        who holds them. Republishing an unchanged catalog is a server-side no-op.
+
+        Returns the server's sync summary (``unchanged``, ``roles_declared``,
+        ``permissions_declared``, ``orphaned_roles`` …). Raises
+        :class:`ManifestPublishError` when the push is rejected.
+        """
+        if not self._config.client_secret:
+            raise ConfigurationError(
+                "Publishing a manifest requires issuer, client_id and client_secret."
+            )
+
+        token = self.machine_token(scopes=["apps.manifest"])
+        url = f"{self._config.issuer.rstrip('/')}/api/v1/apps/manifest"
+        response = self._http.post(
+            url,
+            json=manifest.to_dict(),
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        )
+        if response.status_code >= 400:
+            raise ManifestPublishError(
+                f"Manifest push failed: HTTP {response.status_code} {response.text}"
+            )
         result: dict[str, Any] = response.json()
         return result
 

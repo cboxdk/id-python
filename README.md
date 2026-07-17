@@ -63,6 +63,29 @@ claims = client.userinfo(user.access_token)              # as a user
 result = client.introspect(some_token)                   # RFC 7662
 ```
 
+## Declare roles & permissions
+
+Your app declares its authorization **roles** and **permissions** in code and publishes
+that catalog to Cbox ID on deploy. Cbox ID owns identity and who holds which role; your
+app owns what a role *means*. Publishing is idempotent — an unchanged catalog is a
+server-side no-op.
+
+```python
+from cbox_id import AuthzManifest
+
+manifest = (
+    AuthzManifest()
+    .permission("invoices:create", "Create invoices")
+    .role("billing-admin", "Billing Admin", permissions=["invoices:create"])
+)
+summary = client.publish_manifest(manifest)   # run on deploy
+```
+
+`publish_manifest` mints a client-credentials token with the `apps.manifest` scope, POSTs
+the manifest to `{issuer}/api/v1/apps/manifest`, and returns the server's sync summary
+(`unchanged`, `roles_declared`, `permissions_declared`, `orphaned_roles`, …). It needs a
+`client_secret` and raises `ManifestPublishError` if the push is rejected.
+
 ## Verify webhooks
 
 ```python

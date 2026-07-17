@@ -17,3 +17,7 @@ class InvalidStateError(CboxIdError):
 
 class AuthenticationError(CboxIdError):
     """Login could not be completed, or a token failed verification."""
+
+
+class ManifestPublishError(CboxIdError):
+    """Publishing the authorization manifest to Cbox ID was rejected."""
