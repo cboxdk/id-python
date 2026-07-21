@@ -55,3 +55,19 @@ class CboxUser:
     def claim(self, key: str) -> Any:
         """Return an arbitrary claim, or ``None``."""
         return self.claims.get(key)
+
+
+@dataclass(frozen=True)
+class RefreshedTokens:
+    """Tokens returned by :meth:`CboxIdClient.refresh`.
+
+    Cbox ID rotates refresh tokens and detects reuse, so ``refresh_token`` is a NEW
+    value — store it and discard the one you presented; replaying a rotated token
+    revokes the whole family.
+    """
+
+    access_token: str
+    refresh_token: str | None
+    id_token: str | None
+    expires_in: int
+    scope: str | None

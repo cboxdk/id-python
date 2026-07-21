@@ -11,7 +11,7 @@ from .errors import (
     InvalidStateError,
     ManifestPublishError,
 )
-from .models import AuthorizationRequest, CboxIdConfig, CboxUser
+from .models import AuthorizationRequest, CboxIdConfig, CboxUser, RefreshedTokens
 from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_webhook
 
@@ -27,6 +27,7 @@ __all__ = [
     "InvalidStateError",
     "ManifestPublishError",
     "Permission",
+    "RefreshedTokens",
     "Role",
     "challenge",
     "create_verifier",

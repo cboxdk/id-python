@@ -19,7 +19,7 @@ from .errors import (
     InvalidStateError,
     ManifestPublishError,
 )
-from .models import AuthorizationRequest, CboxIdConfig, CboxUser
+from .models import AuthorizationRequest, CboxIdConfig, CboxUser, RefreshedTokens
 from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_webhook
 
@@ -181,6 +181,42 @@ class CboxIdClient:
         if not isinstance(token, str):
             raise AuthenticationError("The token response had no access_token.")
         return token
+
+    def refresh(self, refresh_token: str) -> RefreshedTokens:
+        """Exchange a refresh token for a fresh access token (OAuth 2.0 refresh_token).
+
+        Cbox ID rotates refresh tokens and detects reuse, so ALWAYS persist the
+        returned ``refresh_token`` and discard the one you passed — presenting a
+        rotated token again revokes the entire token family.
+        """
+        data: dict[str, str] = {
+            "grant_type": "refresh_token",
+            "client_id": self._config.client_id,
+            "refresh_token": refresh_token,
+        }
+        if self._config.client_secret:
+            data["client_secret"] = self._config.client_secret
+
+        response = self._http.post(self._endpoint("token_endpoint"), data=data)
+        if response.status_code >= 400:
+            raise AuthenticationError(f"Token refresh failed: {response.text}")
+
+        tokens: dict[str, Any] = response.json()
+        access_token = tokens.get("access_token")
+        if not isinstance(access_token, str):
+            raise AuthenticationError("The refresh response carried no access token.")
+
+        expires_in = tokens.get("expires_in")
+        scope = tokens.get("scope")
+        return RefreshedTokens(
+            access_token=access_token,
+            refresh_token=tokens.get("refresh_token")
+            if isinstance(tokens.get("refresh_token"), str)
+            else None,
+            id_token=tokens.get("id_token") if isinstance(tokens.get("id_token"), str) else None,
+            expires_in=int(expires_in) if isinstance(expires_in, int | float) else 0,
+            scope=scope if isinstance(scope, str) else None,
+        )
 
     def userinfo(self, access_token: str) -> dict[str, Any]:
         """The OIDC userinfo claims for an access token."""

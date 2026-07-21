@@ -39,6 +39,22 @@ def test_authenticate_returns_verified_user(fake: FakeInstance) -> None:
     assert user.expires_in == 3600
 
 
+def test_refresh_exchanges_for_rotated_tokens(fake: FakeInstance) -> None:
+    fake.set_token_response(
+        {
+            "access_token": "access-2",
+            "refresh_token": "refresh-2",
+            "expires_in": 3600,
+            "scope": "openid offline_access",
+        }
+    )
+    tokens = fake.client.refresh("refresh-abc")
+    assert tokens.access_token == "access-2"
+    assert tokens.refresh_token == "refresh-2"
+    assert tokens.expires_in == 3600
+    assert tokens.scope == "openid offline_access"
+
+
 def test_authenticate_rejects_mismatched_state(fake: FakeInstance) -> None:
     with pytest.raises(InvalidStateError):
         fake.client.authenticate(code="auth-code", state="forged", **STORED)
