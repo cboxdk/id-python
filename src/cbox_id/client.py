@@ -208,11 +208,12 @@ class CboxIdClient:
 
         expires_in = tokens.get("expires_in")
         scope = tokens.get("scope")
+        rotated = tokens.get("refresh_token")
         return RefreshedTokens(
             access_token=access_token,
-            refresh_token=tokens.get("refresh_token")
-            if isinstance(tokens.get("refresh_token"), str)
-            else None,
+            # Keep the presented token when the server does not rotate (OAuth 2.0 §6);
+            # callers persist this value, so it must never be None.
+            refresh_token=rotated if isinstance(rotated, str) else refresh_token,
             id_token=tokens.get("id_token") if isinstance(tokens.get("id_token"), str) else None,
             expires_in=int(expires_in) if isinstance(expires_in, int | float) else 0,
             scope=scope if isinstance(scope, str) else None,

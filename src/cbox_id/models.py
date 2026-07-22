@@ -67,7 +67,7 @@ class RefreshedTokens:
     """
 
     access_token: str
-    refresh_token: str | None
+    refresh_token: str
     id_token: str | None
     expires_in: int
     scope: str | None
