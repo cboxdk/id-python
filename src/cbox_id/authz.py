@@ -93,7 +93,7 @@ class AuthzManifest:
             "permissions": [permission.to_dict() for permission in self._permissions],
             "roles": [role.to_dict() for role in self._roles],
         }
-        body["version"] = _version(body)
+        body["version"] = _version(self._permissions, self._roles)
         return body
 
     def is_empty(self) -> bool:
@@ -101,12 +101,42 @@ class AuthzManifest:
         return not self._permissions and not self._roles
 
 
-def _version(body: dict[str, Any]) -> str:
+def _empty_to_null(value: str | None) -> str | None:
+    """PHP treats an absent or empty description as ``null`` in the hashed catalog."""
+    return value if value else None
+
+
+def _canonical_json(permissions: list[Permission], roles: list[Role]) -> str:
+    """The exact canonical JSON the PHP reference hashes (``Manifest::checksum``).
+
+    Object keys in insertion order, permissions and roles sorted by key, each role's
+    permission refs sorted, an absent-or-empty description emitted as ``null``, and
+    PHP ``json_encode`` defaults: compact separators, non-ASCII escaped as ``\\uXXXX``
+    (``ensure_ascii``), and forward slashes escaped as ``\\/``.
+    """
+    canonical = {
+        "permissions": [
+            {"key": permission.key, "description": _empty_to_null(permission.description)}
+            for permission in sorted(permissions, key=lambda permission: permission.key)
+        ],
+        "roles": [
+            {
+                "key": role.key,
+                "name": role.name,
+                "description": _empty_to_null(role.description),
+                "permissions": sorted(role.permissions),
+            }
+            for role in sorted(roles, key=lambda role: role.key)
+        ],
+    }
+    return json.dumps(canonical, separators=(",", ":"), ensure_ascii=True).replace("/", "\\/")
+
+
+def _version(permissions: list[Permission], roles: list[Role]) -> str:
     """A stable 16-hex-char content hash of the manifest's permissions + roles.
 
-    Mirrors the PHP reference SDK byte-for-byte (compact, unicode- and slash-escaped
-    JSON, sha256, first 16 hex chars) so the same catalog yields the same version
-    across every Cbox ID SDK.
+    Mirrors the PHP reference SDK byte-for-byte (see :func:`_canonical_json`) so the
+    same catalog yields the same version across every Cbox ID SDK.
     """
-    encoded = json.dumps(body, separators=(",", ":"), ensure_ascii=True).replace("/", "\\/")
+    encoded = _canonical_json(permissions, roles)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]

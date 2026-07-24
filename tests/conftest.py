@@ -40,6 +40,9 @@ DISCOVERY = {
 class FakeInstance:
     client: CboxIdClient
     sign_id_token: Callable[[dict[str, Any]], str]
+    # Signs with a DIFFERENT key than the JWKS advertises (kid still "test-key"), so
+    # the signature must fail to verify.
+    sign_foreign_id_token: Callable[[dict[str, Any]], str]
     token_response: dict[str, Any] = field(default_factory=dict)
 
     def set_token_response(self, response: dict[str, Any]) -> None:
@@ -54,9 +57,15 @@ def fake() -> FakeInstance:
     jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
     jwk.update({"kid": "test-key", "alg": "RS256", "use": "sig"})
 
+    foreign_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
     def sign_id_token(claims: dict[str, Any]) -> str:
         payload = {"iat": int(time.time()), "exp": int(time.time()) + 300, **claims}
         return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test-key"})
+
+    def sign_foreign_id_token(claims: dict[str, Any]) -> str:
+        payload = {"iat": int(time.time()), "exp": int(time.time()) + 300, **claims}
+        return jwt.encode(payload, foreign_key, algorithm="RS256", headers={"kid": "test-key"})
 
     default_id_token = sign_id_token(
         {
@@ -70,7 +79,11 @@ def fake() -> FakeInstance:
         }
     )
 
-    state = FakeInstance(client=None, sign_id_token=sign_id_token)  # type: ignore[arg-type]
+    state = FakeInstance(
+        client=None,  # type: ignore[arg-type]
+        sign_id_token=sign_id_token,
+        sign_foreign_id_token=sign_foreign_id_token,
+    )
     state.token_response = {
         "access_token": "access-abc",
         "id_token": default_id_token,

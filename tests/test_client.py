@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import json
+import time
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -10,6 +13,15 @@ from cbox_id.pkce import challenge
 from .conftest import CLIENT_ID, ISSUER, NONCE, FakeInstance
 
 STORED = {"expected_state": "state-1", "code_verifier": "verifier-1", "nonce": NONCE}
+
+
+def _tamper_claim(token: str, claim: str, value: str) -> str:
+    """Alter a claim but re-attach the ORIGINAL signature (a forgery attempt)."""
+    header, payload, signature = token.split(".")
+    data = json.loads(base64.urlsafe_b64decode(payload + "=="))
+    data[claim] = value
+    new_payload = base64.urlsafe_b64encode(json.dumps(data).encode()).rstrip(b"=").decode()
+    return f"{header}.{new_payload}.{signature}"
 
 
 def test_authorization_request_uses_pkce_s256(fake: FakeInstance) -> None:
@@ -62,9 +74,7 @@ def test_authenticate_rejects_mismatched_state(fake: FakeInstance) -> None:
 
 def test_authenticate_surfaces_provider_error(fake: FakeInstance) -> None:
     with pytest.raises(AuthenticationError, match="access_denied"):
-        fake.client.authenticate(
-            code=None, state="state-1", error="access_denied", **STORED
-        )
+        fake.client.authenticate(code=None, state="state-1", error="access_denied", **STORED)
 
 
 def test_authenticate_rejects_replayed_nonce(fake: FakeInstance) -> None:
@@ -90,6 +100,43 @@ def test_authenticate_rejects_wrong_issuer(fake: FakeInstance) -> None:
 def test_authenticate_rejects_wrong_audience(fake: FakeInstance) -> None:
     token = fake.sign_id_token(
         {"iss": ISSUER, "aud": "someone-else", "sub": "user-1", "nonce": NONCE}
+    )
+    fake.set_token_response({"access_token": "access-abc", "id_token": token})
+
+    with pytest.raises(AuthenticationError):
+        fake.client.authenticate(code="auth-code", state="state-1", **STORED)
+
+
+def test_authenticate_rejects_foreign_key_signature(fake: FakeInstance) -> None:
+    # Signed with a key the JWKS does not advertise; the signature must fail. A
+    # regression that skipped the signature check would let this token through.
+    token = fake.sign_foreign_id_token(
+        {"iss": ISSUER, "aud": CLIENT_ID, "sub": "user-1", "nonce": NONCE}
+    )
+    fake.set_token_response({"access_token": "access-abc", "id_token": token})
+
+    with pytest.raises(AuthenticationError):
+        fake.client.authenticate(code="auth-code", state="state-1", **STORED)
+
+
+def test_authenticate_rejects_tampered_payload(fake: FakeInstance) -> None:
+    valid = fake.sign_id_token({"iss": ISSUER, "aud": CLIENT_ID, "sub": "user-1", "nonce": NONCE})
+    tampered = _tamper_claim(valid, "sub", "attacker")
+    fake.set_token_response({"access_token": "access-abc", "id_token": tampered})
+
+    with pytest.raises(AuthenticationError):
+        fake.client.authenticate(code="auth-code", state="state-1", **STORED)
+
+
+def test_authenticate_rejects_expired_token(fake: FakeInstance) -> None:
+    token = fake.sign_id_token(
+        {
+            "iss": ISSUER,
+            "aud": CLIENT_ID,
+            "sub": "user-1",
+            "nonce": NONCE,
+            "exp": int(time.time()) - 60,  # overrides the default +5m expiry
+        }
     )
     fake.set_token_response({"access_token": "access-abc", "id_token": token})
 
