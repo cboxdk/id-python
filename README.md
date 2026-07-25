@@ -9,7 +9,7 @@ a callback, not a rewrite — and adds the conveniences a hosted-identity produc
   plus issuer, audience and nonce).
 - **Hosted profile management** — a redirect to the instance's own account page.
 - **Back-channel calls** — machine (client-credentials) tokens, UserInfo, RFC 7662
-  introspection.
+  introspection, RFC 7009 revocation.
 - **Webhook / action verification** — confirm an inbound `X-Cbox-Signature`.
 
 Framework-agnostic: works with Flask, FastAPI, Django or plain scripts.
@@ -65,7 +65,12 @@ return redirect(client.profile_url(return_to="https://app.acme.com/dashboard"))
 token = client.machine_token(scopes=["reports.read"])   # as your app
 claims = client.userinfo(user.access_token)              # as a user
 result = client.introspect(some_token)                   # RFC 7662
+client.revoke(user.refresh_token, "refresh_token")       # RFC 7009
 ```
+
+Revoking a refresh token drops the whole token family — that's what "sign out
+everywhere" needs. Both calls are confidential-client, so they require a
+`client_secret`.
 
 ## Declare roles & permissions
 

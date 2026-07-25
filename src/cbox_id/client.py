@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 import httpx
 import jwt
-from jwt.algorithms import RSAAlgorithm
+from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from .authz import AuthzManifest
 from .errors import (
@@ -22,6 +22,18 @@ from .errors import (
 from .models import AuthorizationRequest, CboxIdConfig, CboxUser, RefreshedTokens
 from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_webhook
+
+# The id_token signature algorithms we accept, by JWKS key type. An explicit
+# allow-list: a key type or alg outside this map is refused rather than trusted,
+# and `none` can never appear.
+_ID_TOKEN_ALGORITHMS: dict[str, tuple[str, ...]] = {
+    "RSA": ("RS256",),
+    "EC": ("ES256",),
+}
+
+# How long to wait before a second JWKS refetch after a kid miss. Without it a token
+# bearing a bogus kid would force a JWKS request on every verification.
+_JWKS_REFETCH_COOLDOWN_SECONDS = 60.0
 
 
 class CboxIdClient:
@@ -50,6 +62,7 @@ class CboxIdClient:
         self._http = http_client or httpx.Client(timeout=config.timeout_seconds)
         self._discovery_cache: tuple[dict[str, Any], float] | None = None
         self._jwks_cache: tuple[dict[str, Any], float] | None = None
+        self._jwks_refetched_at: float = 0.0
 
     # -- login ---------------------------------------------------------------
 
@@ -244,6 +257,29 @@ class CboxIdClient:
         result: dict[str, Any] = response.json()
         return result
 
+    def revoke(self, token: str, token_type_hint: str | None = None) -> None:
+        """RFC 7009 token revocation (confidential-client auth).
+
+        Revokes an access or refresh token; revoking a refresh token also drops the
+        whole token family, so this is what a real "sign out everywhere" does.
+
+        Per RFC 7009 the server answers 200 for an unknown or already-revoked token,
+        so a successful call means "the token is not valid any more", not "it
+        existed". ``token_type_hint`` (``access_token`` / ``refresh_token``) only
+        tells the server which store to search first.
+        """
+        data = {"token": token}
+        if token_type_hint:
+            data["token_type_hint"] = token_type_hint
+
+        response = self._http.post(
+            self._endpoint("revocation_endpoint"),
+            data=data,
+            auth=(self._config.client_id, self._require_secret()),
+        )
+        if response.status_code >= 400:
+            raise AuthenticationError("Revocation request failed.")
+
     def publish_manifest(self, manifest: AuthzManifest) -> dict[str, Any]:
         """Publish this app's declared roles & permissions manifest to Cbox ID.
 
@@ -319,17 +355,23 @@ class CboxIdClient:
     def _verify_id_token(self, id_token: str, nonce: str | None) -> dict[str, Any]:
         try:
             header = jwt.get_unverified_header(id_token)
-            kid = header.get("kid")
-            key_data = next(
-                (k for k in self._jwks().get("keys", []) if k.get("kid") == kid), None
-            )
+            key_data = self._signing_key(header.get("kid"))
             if key_data is None:
                 raise AuthenticationError("No matching key for the id_token.")
-            public_key = RSAAlgorithm.from_jwk(json.dumps(key_data))
+
+            kty = key_data.get("kty")
+            algorithms = _ID_TOKEN_ALGORITHMS.get(kty if isinstance(kty, str) else "")
+            if algorithms is None:
+                raise AuthenticationError(f"Unsupported id_token signing key type: {kty!r}.")
+
+            # RSA and EC keys need different JWK parsers; the alg allow-list stays
+            # explicit either way, so an instance rotating to EC keys keeps working.
+            parse = RSAAlgorithm.from_jwk if kty == "RSA" else ECAlgorithm.from_jwk
+            public_key = parse(json.dumps(key_data))
             claims: dict[str, Any] = jwt.decode(
                 id_token,
                 public_key,  # type: ignore[arg-type]
-                algorithms=["RS256"],
+                algorithms=list(algorithms),
                 audience=self._config.client_id,
                 issuer=self._config.issuer,
             )
@@ -356,6 +398,25 @@ class CboxIdClient:
             raise AuthenticationError("The discovery document was missing an issuer.")
         self._discovery_cache = (doc, time.time() + self._config.cache_ttl_seconds)
         return doc
+
+    def _signing_key(self, kid: Any) -> dict[str, Any] | None:
+        """The JWKS key for ``kid``, refetching once when the cached set lacks it.
+
+        The instance can roll its signing key inside our cache TTL; without a refetch
+        every login would fail until the TTL lapsed. The refetch is on a cooldown so
+        a token bearing a bogus kid cannot turn each verification into a JWKS request.
+        """
+        key = _find_key(self._jwks(), kid)
+        if key is not None:
+            return key
+
+        now = time.time()
+        if now - self._jwks_refetched_at < _JWKS_REFETCH_COOLDOWN_SECONDS:
+            return None
+
+        self._jwks_refetched_at = now
+        self._jwks_cache = None
+        return _find_key(self._jwks(), kid)
 
     def _jwks(self) -> dict[str, Any]:
         if self._jwks_cache and self._jwks_cache[1] > time.time():
@@ -387,3 +448,13 @@ class CboxIdClient:
                 "This call requires a `client_secret`, but none is configured."
             )
         return self._config.client_secret
+
+
+def _find_key(jwks: dict[str, Any], kid: Any) -> dict[str, Any] | None:
+    keys = jwks.get("keys")
+    if not isinstance(keys, list):
+        return None
+    return next(
+        (k for k in keys if isinstance(k, dict) and k.get("kid") == kid),
+        None,
+    )

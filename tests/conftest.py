@@ -16,8 +16,8 @@ from urllib.parse import parse_qsl
 import httpx
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
-from jwt.algorithms import RSAAlgorithm
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from cbox_id import CboxIdClient, CboxIdConfig
 
@@ -32,6 +32,7 @@ DISCOVERY = {
     "jwks_uri": f"{ISSUER}/oauth/jwks",
     "userinfo_endpoint": f"{ISSUER}/oauth/userinfo",
     "introspection_endpoint": f"{ISSUER}/oauth/introspect",
+    "revocation_endpoint": f"{ISSUER}/oauth/revoke",
     "end_session_endpoint": f"{ISSUER}/oauth/logout",
 }
 
@@ -43,7 +44,19 @@ class FakeInstance:
     # Signs with a DIFFERENT key than the JWKS advertises (kid still "test-key"), so
     # the signature must fail to verify.
     sign_foreign_id_token: Callable[[dict[str, Any]], str]
+    # Signs ES256 with the EC key the JWKS also advertises (kid "test-key-ec").
+    sign_es256_id_token: Callable[[dict[str, Any]], str]
+    # Rolls the RSA signing key to a new kid and re-serves the JWKS, as an instance
+    # does when it rotates signing material inside a client's cache TTL.
+    rotate_signing_key: Callable[[], None]
+    # The mock-transport HTTP client, so a test can build a differently-configured
+    # client against the same fake instance.
+    http: httpx.Client
     token_response: dict[str, Any] = field(default_factory=dict)
+    # Recorded by the endpoints, for assertions.
+    revocations: list[dict[str, Any]] = field(default_factory=list)
+    revocation_auth: list[str | None] = field(default_factory=list)
+    jwks_fetches: int = 0
 
     def set_token_response(self, response: dict[str, Any]) -> None:
         self.token_response.clear()
@@ -53,19 +66,41 @@ class FakeInstance:
 @pytest.fixture
 def fake() -> FakeInstance:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    public_key = private_key.public_key()
-    jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
+    jwk = json.loads(RSAAlgorithm.to_jwk(private_key.public_key()))
     jwk.update({"kid": "test-key", "alg": "RS256", "use": "sig"})
+
+    ec_key = ec.generate_private_key(ec.SECP256R1())
+    ec_jwk = json.loads(ECAlgorithm.to_jwk(ec_key.public_key()))
+    ec_jwk.update({"kid": "test-key-ec", "alg": "ES256", "use": "sig"})
 
     foreign_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
+    # The key material the instance is signing with right now, and the set its JWKS
+    # advertises. rotate_signing_key() swaps both, exactly as a key roll does.
+    signing = {"key": private_key, "kid": "test-key"}
+    served_keys = [jwk, ec_jwk]
+
     def sign_id_token(claims: dict[str, Any]) -> str:
         payload = {"iat": int(time.time()), "exp": int(time.time()) + 300, **claims}
-        return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test-key"})
+        return jwt.encode(
+            payload, signing["key"], algorithm="RS256", headers={"kid": signing["kid"]}
+        )
 
     def sign_foreign_id_token(claims: dict[str, Any]) -> str:
         payload = {"iat": int(time.time()), "exp": int(time.time()) + 300, **claims}
         return jwt.encode(payload, foreign_key, algorithm="RS256", headers={"kid": "test-key"})
+
+    def sign_es256_id_token(claims: dict[str, Any]) -> str:
+        payload = {"iat": int(time.time()), "exp": int(time.time()) + 300, **claims}
+        return jwt.encode(payload, ec_key, algorithm="ES256", headers={"kid": "test-key-ec"})
+
+    def rotate_signing_key() -> None:
+        rotated = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        rotated_jwk = json.loads(RSAAlgorithm.to_jwk(rotated.public_key()))
+        rotated_jwk.update({"kid": "test-key-2", "alg": "RS256", "use": "sig"})
+        signing["key"] = rotated
+        signing["kid"] = "test-key-2"
+        served_keys[:] = [rotated_jwk, ec_jwk]
 
     default_id_token = sign_id_token(
         {
@@ -83,6 +118,9 @@ def fake() -> FakeInstance:
         client=None,  # type: ignore[arg-type]
         sign_id_token=sign_id_token,
         sign_foreign_id_token=sign_foreign_id_token,
+        sign_es256_id_token=sign_es256_id_token,
+        rotate_signing_key=rotate_signing_key,
+        http=None,  # type: ignore[arg-type]
     )
     state.token_response = {
         "access_token": "access-abc",
@@ -97,7 +135,8 @@ def fake() -> FakeInstance:
         if url.endswith("/.well-known/openid-configuration"):
             return httpx.Response(200, json=DISCOVERY)
         if url == DISCOVERY["jwks_uri"]:
-            return httpx.Response(200, json={"keys": [jwk]})
+            state.jwks_fetches += 1
+            return httpx.Response(200, json={"keys": list(served_keys)})
         if url == DISCOVERY["token_endpoint"]:
             form = dict(parse_qsl(request.content.decode()))
             if form.get("grant_type") == "client_credentials":
@@ -110,9 +149,15 @@ def fake() -> FakeInstance:
             )
         if url == DISCOVERY["introspection_endpoint"]:
             return httpx.Response(200, json={"active": True, "sub": "user-1", "scope": "openid"})
+        if url == DISCOVERY["revocation_endpoint"]:
+            state.revocations.append(dict(parse_qsl(request.content.decode())))
+            state.revocation_auth.append(request.headers.get("authorization"))
+            # RFC 7009: a successful revocation carries an empty 200 body.
+            return httpx.Response(200)
         return httpx.Response(404)
 
     http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    state.http = http_client
     config = CboxIdConfig(
         issuer=ISSUER,
         client_id=CLIENT_ID,

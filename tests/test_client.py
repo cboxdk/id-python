@@ -5,9 +5,16 @@ import json
 import time
 from urllib.parse import parse_qs, urlparse
 
+import jwt
 import pytest
 
-from cbox_id import AuthenticationError, InvalidStateError
+from cbox_id import (
+    AuthenticationError,
+    CboxIdClient,
+    CboxIdConfig,
+    ConfigurationError,
+    InvalidStateError,
+)
 from cbox_id.pkce import challenge
 
 from .conftest import CLIENT_ID, ISSUER, NONCE, FakeInstance
@@ -150,6 +157,78 @@ def test_machine_token(fake: FakeInstance) -> None:
 
 def test_introspect(fake: FakeInstance) -> None:
     assert fake.client.introspect("some-token")["active"] is True
+
+
+def test_revoke_posts_token_and_hint_with_client_auth(fake: FakeInstance) -> None:
+    assert fake.client.revoke("refresh-abc", "refresh_token") is None
+
+    expected = base64.b64encode(f"{CLIENT_ID}:secret-xyz".encode()).decode()
+    assert fake.revocations == [{"token": "refresh-abc", "token_type_hint": "refresh_token"}]
+    assert fake.revocation_auth == [f"Basic {expected}"]
+
+
+def test_revoke_omits_the_hint_when_not_given(fake: FakeInstance) -> None:
+    fake.client.revoke("access-abc")
+
+    assert fake.revocations == [{"token": "access-abc"}]
+
+
+def test_revoke_requires_a_client_secret(fake: FakeInstance) -> None:
+    public_client = CboxIdClient(
+        CboxIdConfig(
+            issuer=ISSUER, client_id=CLIENT_ID, redirect_uri="https://app.test/auth/callback"
+        ),
+        http_client=fake.http,
+    )
+    with pytest.raises(ConfigurationError):
+        public_client.revoke("some-token")
+
+    assert fake.revocations == []
+
+
+def test_accepts_an_es256_id_token(fake: FakeInstance) -> None:
+    # An instance that rotated to EC signing keys must not break login.
+    token = fake.sign_es256_id_token(
+        {"iss": ISSUER, "aud": CLIENT_ID, "sub": "user-1", "nonce": NONCE}
+    )
+    fake.set_token_response({"access_token": "access-abc", "id_token": token})
+
+    assert fake.client.authenticate(code="auth-code", state="state-1", **STORED).id == "user-1"
+
+
+def test_refetches_the_jwks_when_the_kid_rotates_mid_ttl(fake: FakeInstance) -> None:
+    # Warm the JWKS cache with the pre-rotation key set.
+    fake.client.authenticate(code="auth-code", state="state-1", **STORED)
+    fetches_before = fake.jwks_fetches
+
+    fake.rotate_signing_key()
+    token = fake.sign_id_token({"iss": ISSUER, "aud": CLIENT_ID, "sub": "user-1", "nonce": NONCE})
+    fake.set_token_response({"access_token": "access-abc", "id_token": token})
+
+    # Without the kid-miss refetch this raises "No matching key" until the TTL lapses.
+    assert fake.client.authenticate(code="auth-code", state="state-1", **STORED).id == "user-1"
+    assert fake.jwks_fetches == fetches_before + 1
+
+
+def test_kid_miss_refetches_only_once_within_the_cooldown(fake: FakeInstance) -> None:
+    fake.client.authenticate(code="auth-code", state="state-1", **STORED)
+    fetches_before = fake.jwks_fetches
+
+    # A token whose kid the instance never advertised: refetch once, then stop, so a
+    # bogus kid cannot turn every login into a JWKS request.
+    bogus = jwt.encode(
+        {"iss": ISSUER, "aud": CLIENT_ID, "sub": "user-1", "exp": int(time.time()) + 300},
+        "a" * 32,
+        algorithm="HS256",
+        headers={"kid": "no-such-key"},
+    )
+    fake.set_token_response({"access_token": "access-abc", "id_token": bogus})
+
+    for _ in range(3):
+        with pytest.raises(AuthenticationError, match="No matching key"):
+            fake.client.authenticate(code="auth-code", state="state-1", **STORED)
+
+    assert fake.jwks_fetches == fetches_before + 1
 
 
 def test_profile_url(fake: FakeInstance) -> None:
