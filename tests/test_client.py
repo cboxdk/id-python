@@ -238,7 +238,45 @@ def test_profile_url(fake: FakeInstance) -> None:
     )
 
 
-def test_logout_url(fake: FakeInstance) -> None:
-    assert fake.client.logout_url("https://app.test") == (
-        f"{ISSUER}/oauth/logout?post_logout_redirect_uri=https%3A%2F%2Fapp.test"
-    )
+def test_logout_url_always_carries_client_id(fake: FakeInstance) -> None:
+    # The server validates post_logout_redirect_uri against the requesting client's
+    # registered allow-list, so a logout URL without client_id can never redirect —
+    # it strands the user on a bare "signed out" page. Assert on the parsed query so
+    # a regression that drops client_id fails loudly.
+    url = fake.client.logout_url("https://app.test")
+    assert url is not None
+    parsed = urlparse(url)
+    assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == f"{ISSUER}/oauth/logout"
+    query = parse_qs(parsed.query)
+    assert query["client_id"] == [CLIENT_ID]
+    assert query["post_logout_redirect_uri"] == ["https://app.test"]
+    assert "id_token_hint" not in query
+
+    bare = fake.client.logout_url()
+    assert bare is not None
+    bare_query = parse_qs(urlparse(bare).query)
+    assert bare_query["client_id"] == [CLIENT_ID]
+    assert "post_logout_redirect_uri" not in bare_query
+
+
+def test_logout_url_passes_an_id_token_hint(fake: FakeInstance) -> None:
+    url = fake.client.logout_url("https://app.test", id_token_hint="header.payload.sig")
+    assert url is not None
+    query = parse_qs(urlparse(url).query)
+    assert query["id_token_hint"] == ["header.payload.sig"]
+    assert query["client_id"] == [CLIENT_ID]
+
+
+def test_logout_url_omits_an_empty_id_token_hint(fake: FakeInstance) -> None:
+    # `session.get("id_token", "")` is the natural caller idiom, and an empty
+    # `id_token_hint=` names no subject — a stricter OP may reject it. id-js, id-go
+    # and laravel-id-client all drop it; Python must not be the outlier. parse_qs
+    # discards blank values, so assert on the raw query string too.
+    url = fake.client.logout_url("https://app.test", id_token_hint="")
+    assert url is not None
+    assert "id_token_hint" not in urlparse(url).query
+    assert parse_qs(urlparse(url).query)["client_id"] == [CLIENT_ID]
+
+    bare = fake.client.logout_url(id_token_hint="")
+    assert bare is not None
+    assert "id_token_hint" not in urlparse(bare).query

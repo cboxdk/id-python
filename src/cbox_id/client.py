@@ -162,14 +162,32 @@ class CboxIdClient:
         base = f"{self._config.issuer.rstrip('/')}{self._account_path()}"
         return base if return_to is None else f"{base}?{urlencode({'return_to': return_to})}"
 
-    def logout_url(self, return_to: str | None = None) -> str | None:
-        """RP-initiated logout URL, or ``None`` when the instance advertises none."""
+    def logout_url(
+        self, return_to: str | None = None, *, id_token_hint: str | None = None
+    ) -> str | None:
+        """RP-initiated logout URL, or ``None`` when the instance advertises none.
+
+        ``client_id`` is always sent, even without a ``return_to``: the server checks
+        ``post_logout_redirect_uri`` against the registered allow-list of *that*
+        client (OIDC RP-Initiated Logout 1.0 §2). If the request does not name the
+        relying party there is no list to check, so the return URL is dropped and the
+        user lands on a bare "you are signed out" page. ``id_token_hint`` — the
+        user's ``id_token``, when you still hold it — is the spec's other way to
+        identify the client, and also tells the server whose session is ending.
+        """
         endpoint = self._optional_endpoint("end_session_endpoint")
         if endpoint is None:
             return None
-        if return_to is None:
-            return endpoint
-        return f"{endpoint}?{urlencode({'post_logout_redirect_uri': return_to})}"
+        params = {"client_id": self._config.client_id}
+        if return_to is not None:
+            params["post_logout_redirect_uri"] = return_to
+        # Truthiness, not `is not None`: callers reach for
+        # `session.get("id_token", "")`, and an empty `id_token_hint=` is a hint that
+        # names nobody — a stricter OP than Cbox ID may reject it outright. The other
+        # SDKs (id-js, id-go, laravel-id-client) all drop the empty string; match them.
+        if id_token_hint:
+            params["id_token_hint"] = id_token_hint
+        return f"{endpoint}?{urlencode(params)}"
 
     # -- back-channel --------------------------------------------------------
 
