@@ -110,7 +110,8 @@ ok = verify_webhook(
 ## Security & scope
 
 Login is hardened by default — PKCE, `state`, nonce, and full `id_token` verification
-via PyJWT (RS256-pinned, so `alg:none` / algorithm confusion is refused). Keep the
+via PyJWT, against an explicit allow-list of RS256 and ES256 keyed by JWKS key type,
+so `alg:none` and algorithm confusion are both refused. Keep the
 client secret and webhook secrets server-side.
 
 This is a **client**. It authenticates users and calls a Cbox ID instance's standard

@@ -232,9 +232,13 @@ def test_kid_miss_refetches_only_once_within_the_cooldown(fake: FakeInstance) ->
 
 
 def test_profile_url(fake: FakeInstance) -> None:
-    assert fake.client.profile_url() == f"{ISSUER}/settings"
+    # `/account`, not `/settings`. The latter is the organization-admin page: it
+    # redirects a non-admin to `/account` and drops `return_to` on the way, so a
+    # member sent there arrived at the right screen having lost the page they came
+    # from. Pinned, because the wrong default reads perfectly plausible.
+    assert fake.client.profile_url() == f"{ISSUER}/account"
     assert fake.client.profile_url("https://app.test/home") == (
-        f"{ISSUER}/settings?return_to=https%3A%2F%2Fapp.test%2Fhome"
+        f"{ISSUER}/account?return_to=https%3A%2F%2Fapp.test%2Fhome"
     )
 
 

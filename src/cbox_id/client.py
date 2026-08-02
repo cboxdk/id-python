@@ -72,7 +72,6 @@ class CboxIdClient:
         scopes: list[str] | None = None,
         state: str | None = None,
         prompt: str | None = None,
-        login_hint: str | None = None,
         redirect_uri: str | None = None,
     ) -> AuthorizationRequest:
         """Begin login. Persist the returned ``state``/``code_verifier``/``nonce``."""
@@ -92,8 +91,6 @@ class CboxIdClient:
         }
         if prompt:
             params["prompt"] = prompt
-        if login_hint:
-            params["login_hint"] = login_hint
 
         url = f"{self._endpoint('authorization_endpoint')}?{urlencode(params)}"
         return AuthorizationRequest(

@@ -15,7 +15,11 @@ class CboxIdConfig:
     redirect_uri: str
     client_secret: str | None = None
     scopes: list[str] = field(default_factory=lambda: ["openid", "profile", "email"])
-    account_path: str = "/settings"
+    # The self-service page, not the org-admin one. `/settings` is the admin surface:
+    # it redirects a non-admin to `/account` and drops `return_to` on the way, so a
+    # member sent there lost the page they came from. Every SDK docstring already
+    # described `/account` behaviour while defaulting to the other path.
+    account_path: str = "/account"
     timeout_seconds: float = 10.0
     cache_ttl_seconds: float = 3600.0
 
