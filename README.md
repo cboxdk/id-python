@@ -14,6 +14,58 @@ a callback, not a rewrite — and adds the conveniences a hosted-identity produc
 
 Framework-agnostic: works with Flask, FastAPI, Django or plain scripts.
 
+## In a browser-facing page (publishable keys)
+
+Everything above needs a client secret. A **publishable key** is the opposite — public on
+purpose, and useful only from the origins you registered. Reading the environment's own
+sign-in configuration lets a Django or Flask template render a themed sign-in box without
+shipping a JavaScript SDK to do it:
+
+```python
+from cbox_id import FrontendClient
+
+frontend = FrontendClient("https://id.acme.com", "pk_live_…")
+
+config = frontend.config()          # endpoints, social buttons, the customer's theme
+session = frontend.session(token)   # session.user is None when nobody is signed in
+```
+
+Signed-out is a state rather than an error, and the key grants nothing on its own: the
+access token is the entire authority for `session()`. Passing a client secret raises
+immediately rather than failing later as an opaque 401.
+
+## Migrating off an old login
+
+Cbox ID can ask your system whether an email and password it has never seen are good, and
+import that person on the yes. You write the lookup; the handler owns the signature, the
+freshness window and the constant-time compare:
+
+```python
+from cbox_id import LegacyUser, handle_legacy_login
+
+@app.post("/cbox-legacy")
+def cbox_legacy():
+    status, body = handle_legacy_login(
+        request.get_data(as_text=True),          # the RAW body — the signature covers it
+        request.headers.get("X-Cbox-Signature"),
+        secret=os.environ["CBOX_LEGACY_SECRET"],
+        verify=lambda email, password: (
+            LegacyUser(email, row.name, password_hash=row.hash)
+            if (row := lookup(email)) and check(password, row.hash)
+            else None
+        ),
+    )
+    return jsonify(body), status
+```
+
+Return `None` for a wrong password. **Raising is different**: it means your store could not
+decide, and is answered with 503 so Cbox ID refuses the sign-in rather than reading an
+outage as a bad credential.
+
+It takes the raw body and header rather than a request object, because Flask, Django,
+FastAPI and Starlette all differ — adapting three lines is a smaller imposition than a
+request abstraction invented to avoid them.
+
 ## Install
 
 > **Where do `issuer`, `clientId` and `redirectUri` come from?**
