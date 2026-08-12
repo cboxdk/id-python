@@ -26,13 +26,19 @@ from cbox_id import FrontendClient
 
 frontend = FrontendClient("https://id.acme.com", "pk_live_…")
 
-config = frontend.config()          # endpoints, social buttons, the customer's theme
-session = frontend.session(token)   # session.user is None when nobody is signed in
+config = frontend.config()  # endpoints, social buttons, the customer's theme
+session = frontend.session(token)  # session.user is None when nobody is signed in
 ```
 
 Signed-out is a state rather than an error, and the key grants nothing on its own: the
 access token is the entire authority for `session()`. Passing a client secret raises
 immediately rather than failing later as an opaque 401.
+
+**Before any of this works**, an operator has to turn the Frontend API on
+(`CBOX_ID_FRONTEND_API=true` — it is off by default) and mint a publishable key under
+**Developers → Frontend keys**, listing the exact origins allowed to use it. Exact matches
+only: `https://acme.com` does not cover `https://www.acme.com`.
+
 
 ## Migrating off an old login
 
@@ -40,13 +46,20 @@ Cbox ID can ask your system whether an email and password it has never seen are 
 import that person on the yes. You write the lookup; the handler owns the signature, the
 freshness window and the constant-time compare:
 
+Your handler has **3 seconds** to answer, must be reachable over **HTTPS** (plain `http`,
+including `http://localhost`, is refused — the body is a live password), and is resolved
+through an SSRF guard that blocks private ranges unless an operator relaxes
+`cbox-id.migration.verify_url` for an endpoint on their own network. A slow bcrypt under
+load therefore reads to the person signing in as a wrong password.
+
 ```python
 from cbox_id import LegacyUser, handle_legacy_login
+
 
 @app.post("/cbox-legacy")
 def cbox_legacy():
     status, body = handle_legacy_login(
-        request.get_data(as_text=True),          # the RAW body — the signature covers it
+        request.get_data(as_text=True),  # the RAW body — the signature covers it
         request.headers.get("X-Cbox-Signature"),
         secret=os.environ["CBOX_LEGACY_SECRET"],
         verify=lambda email, password: (
@@ -81,12 +94,14 @@ pip install cbox-id-client
 ```python
 from cbox_id import CboxIdClient, CboxIdConfig
 
-client = CboxIdClient(CboxIdConfig(
-    issuer="https://id.acme.com",
-    client_id="client_...",
-    client_secret="secret_...",
-    redirect_uri="https://app.acme.com/auth/callback",
-))
+client = CboxIdClient(
+    CboxIdConfig(
+        issuer="https://id.acme.com",
+        client_id="client_...",
+        client_secret="secret_...",
+        redirect_uri="https://app.acme.com/auth/callback",
+    )
+)
 
 # Start login — persist state/code_verifier/nonce (e.g. in the session).
 req = client.create_authorization_request()
@@ -114,10 +129,10 @@ return redirect(client.profile_url(return_to="https://app.acme.com/dashboard"))
 ## Back-channel calls
 
 ```python
-token = client.machine_token(scopes=["reports.read"])   # as your app
-claims = client.userinfo(user.access_token)              # as a user
-result = client.introspect(some_token)                   # RFC 7662
-client.revoke(user.refresh_token, "refresh_token")       # RFC 7009
+token = client.machine_token(scopes=["reports.read"])  # as your app
+claims = client.userinfo(user.access_token)  # as a user
+result = client.introspect(some_token)  # RFC 7662
+client.revoke(user.refresh_token, "refresh_token")  # RFC 7009
 ```
 
 Revoking a refresh token drops the whole token family — that's what "sign out
@@ -139,7 +154,7 @@ manifest = (
     .permission("invoices:create", "Create invoices")
     .role("billing-admin", "Billing Admin", permissions=["invoices:create"])
 )
-summary = client.publish_manifest(manifest)   # run on deploy
+summary = client.publish_manifest(manifest)  # run on deploy
 ```
 
 `publish_manifest` mints a client-credentials token with the `apps.manifest` scope, POSTs
@@ -153,7 +168,7 @@ the manifest to `{issuer}/api/v1/apps/manifest`, and returns the server's sync s
 from cbox_id import verify_webhook
 
 ok = verify_webhook(
-    payload=raw_body,                       # the exact bytes received
+    payload=raw_body,  # the exact bytes received
     signature_header=request.headers.get("X-Cbox-Signature"),
     secret=os.environ["CBOX_ID_WEBHOOK_SECRET"],
 )
