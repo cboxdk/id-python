@@ -9,7 +9,28 @@ permissions:
   id-token: write # OIDC for PyPI trusted publishing
 
 jobs:
+  # THE GATE, WHICH THIS WORKFLOW DID NOT HAVE. `release` ran on a tag and published
+  # whatever was there — no tests, no linter, no type check. A red suite could reach PyPI,
+  # and on a package whose whole job is to verify signatures and hold credentials, "we
+  # publish what compiles" is not a policy. The tag no longer decides on its own.
+  gate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest -q
+
   publish:
+    needs: gate
     runs-on: ubuntu-latest
     environment: pypi
     steps:
@@ -18,6 +39,10 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install build
+      # The tag and the version in the file have to agree, or the tag names something
+      # nobody can install. This check is why v0.6.0 published nothing: the tag was pushed
+      # while `pyproject.toml` still said 0.5.1, the job failed here, and the failure sat
+      # in a workflow nobody was watching — the package looked released and was not.
       - name: Check tag matches project version
         run: |
           VERSION=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")

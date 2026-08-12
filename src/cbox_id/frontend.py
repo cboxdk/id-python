@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from .errors import ConfigurationError
+from .errors import ConfigurationError, FrontendApiError
 
 __all__ = ["FrontendClient", "FrontendConfig", "FrontendSession"]
 
@@ -60,6 +60,7 @@ class FrontendClient:
         *,
         timeout: float = 10.0,
         transport: httpx.BaseTransport | None = None,
+        http_client: httpx.Client | None = None,
     ) -> None:
         if not issuer:
             raise ConfigurationError("issuer is required.")
@@ -74,6 +75,10 @@ class FrontendClient:
         self._key = publishable_key
         self._timeout = timeout
         self._transport = transport
+        # ONE CLIENT, like the main client already accepts. A new `httpx.Client` per
+        # request sets up and tears down a connection pool for every call, and left a
+        # caller with a configured client — proxy, retries, custom TLS — no way to pass it.
+        self._http_client = http_client
         self._config: FrontendConfig | None = None
 
     @property
@@ -124,20 +129,74 @@ class FrontendClient:
             **(extra_headers or {}),
         }
 
-        with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
-            response = client.get(f"{self._issuer}{path}", headers=headers)
+        try:
+            if self._http_client is not None:
+                response = self._http_client.get(f"{self._issuer}{path}", headers=headers)
+            else:
+                with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
+                    response = client.get(f"{self._issuer}{path}", headers=headers)
+        except httpx.HTTPError as exc:
+            raise FrontendApiError(
+                f"Could not reach Cbox ID at {self._issuer}: {exc}",
+                code="transport",
+            ) from exc
 
         if response.status_code in (401, 403):
-            raise ConfigurationError(
-                f"Cbox ID refused the request ({response.status_code}). Check that this "
-                "caller's origin is on the key's allow-list, and that the key is not revoked."
+            raise FrontendApiError(
+                # THE SERVER'S OWN REASON FIRST. It answers precisely — "No publishable key
+                # was presented" is not the same problem as "That publishable key cannot be
+                # used from this origin" — and substituting a guess for it made this client
+                # less precise than the API it wraps.
+                self._described(response)
+                or (
+                    f"Cbox ID refused the request ({response.status_code}). Check that this "
+                    "caller's origin is on the key's allow-list, and that the key is not revoked."
+                ),
+                code="origin_not_allowed",
+                status=response.status_code,
             )
 
-        response.raise_for_status()
+        if response.status_code == 429:
+            raise FrontendApiError(
+                self._described(response) or "Too many requests to the Cbox ID Frontend API.",
+                code="rate_limited",
+                status=response.status_code,
+            )
 
-        body = response.json()
+        if response.status_code >= 400:
+            raise FrontendApiError(
+                self._described(response) or f"Cbox ID returned {response.status_code}.",
+                code="server_error",
+                status=response.status_code,
+            )
+
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise FrontendApiError(
+                "Cbox ID returned a body that is not JSON. A proxy, a captive portal or a "
+                "browser extension between you and the issuer is the usual cause.",
+                code="bad_response",
+                status=response.status_code,
+            ) from exc
 
         if not isinstance(body, dict):
-            raise ConfigurationError("Cbox ID returned a body that is not the expected document.")
+            raise FrontendApiError(
+                "Cbox ID returned a body that is not the expected document.",
+                code="bad_response",
+                status=response.status_code,
+            )
 
         return body
+
+    @staticmethod
+    def _described(response: httpx.Response) -> str | None:
+        """The server's own `error_description`, when it sent one."""
+        try:
+            body = response.json()
+        except ValueError:
+            return None
+
+        description = body.get("error_description") if isinstance(body, dict) else None
+
+        return description if isinstance(description, str) and description else None

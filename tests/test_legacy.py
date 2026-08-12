@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from cbox_id import LegacyUser, handle_legacy_login
+from cbox_id import ConfigurationError, LegacyUser, handle_legacy_login
 
 SECRET = "a-secret-long-enough-to-mean-something-here"
 
@@ -26,7 +26,10 @@ def ada(_email: str, _password: str) -> LegacyUser:
 
 
 def test_refuses_a_secret_too_short_to_mean_anything() -> None:
-    with pytest.raises(ValueError):
+    # Inside the package's own hierarchy, so a caller wrapping their handler's
+    # construction in `except CboxIdError` catches this the way they catch every other
+    # configuration mistake this SDK reports.
+    with pytest.raises(ConfigurationError):
         handle_legacy_login("{}", None, secret="short", verify=ada)
 
 

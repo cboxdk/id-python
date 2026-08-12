@@ -188,9 +188,7 @@ class CboxIdClient:
 
     # -- back-channel --------------------------------------------------------
 
-    def machine_token(
-        self, *, scopes: list[str] | None = None, resource: str | None = None
-    ) -> str:
+    def machine_token(self, *, scopes: list[str] | None = None, resource: str | None = None) -> str:
         """A machine (client-credentials) token for calling APIs as your app."""
         data: dict[str, str] = {
             "grant_type": "client_credentials",
@@ -252,9 +250,7 @@ class CboxIdClient:
         endpoint = self._optional_endpoint("userinfo_endpoint")
         if endpoint is None:
             return {}
-        response = self._http.get(
-            endpoint, headers={"Authorization": f"Bearer {access_token}"}
-        )
+        response = self._http.get(endpoint, headers={"Authorization": f"Bearer {access_token}"})
         if response.status_code >= 400:
             raise AuthenticationError("Userinfo request failed.")
         result: dict[str, Any] = response.json()
@@ -348,9 +344,7 @@ class CboxIdClient:
 
     # -- internals -----------------------------------------------------------
 
-    def _exchange(
-        self, code: str, verifier: str, redirect_uri: str | None
-    ) -> dict[str, Any]:
+    def _exchange(self, code: str, verifier: str, redirect_uri: str | None) -> dict[str, Any]:
         data: dict[str, str] = {
             "grant_type": "authorization_code",
             "code": code,

@@ -36,6 +36,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .errors import ConfigurationError
 from .webhook import verify_webhook
 
 __all__ = ["LegacyUser", "handle_legacy_login"]
@@ -81,7 +82,10 @@ def handle_legacy_login(
     than reading an outage as a bad credential — and can tell the two apart in its logs.
     """
     if len(secret) < 32:
-        raise ValueError(
+        # `ConfigurationError`, not a bare `ValueError`: this is the same class of mistake
+        # as passing a client secret where a publishable key belongs, and a caller writing
+        # `except CboxIdError` around their handler's construction should catch both.
+        raise ConfigurationError(
             "A legacy-login secret of at least 32 characters is required; "
             "it is the only thing proving a request came from Cbox ID."
         )

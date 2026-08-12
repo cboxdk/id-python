@@ -8,6 +8,7 @@ from .errors import (
     AuthenticationError,
     CboxIdError,
     ConfigurationError,
+    FrontendApiError,
     InvalidStateError,
     ManifestPublishError,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "CboxIdError",
     "CboxUser",
     "ConfigurationError",
+    "FrontendApiError",
     "InvalidStateError",
     "ManifestPublishError",
     "Permission",
