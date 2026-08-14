@@ -171,6 +171,14 @@ class CboxIdClient:
         user lands on a bare "you are signed out" page. ``id_token_hint`` — the
         user's ``id_token``, when you still hold it — is the spec's other way to
         identify the client, and also tells the server whose session is ending.
+
+        **Pass the hint if you want "sign out everywhere".** Cbox ID revokes every
+        session the person holds only when a hint it can *verify* names the subject
+        holding the browser; with no hint it signs this browser out and leaves their
+        other devices alone. That is deliberate rather than an omission: the endpoint
+        is unauthenticated and reached by a redirect, so a request carrying no proof
+        of who it concerns could otherwise be forged into ending anyone's sessions
+        everywhere. See laravel-id ``UPGRADING.md`` for 1.8.0.
         """
         endpoint = self._optional_endpoint("end_session_endpoint")
         if endpoint is None:
