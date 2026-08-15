@@ -85,8 +85,12 @@ request abstraction invented to avoid them.
 > Register an application in your environment console — see
 > [Integrate your app](https://github.com/cboxdk/cbox-id/blob/main/docs/getting-started/integrate-your-app.md).
 
+> **Not on PyPI, and not planned.** `pip install cbox-id-client` installs nothing — this
+> package has never been published and there is no release pipeline for it. Everything
+> below works; you install it from source.
+
 ```bash
-pip install cbox-id-client
+pip install git+https://github.com/cboxdk/id-python@v0.6.1
 ```
 
 ## Log in users
