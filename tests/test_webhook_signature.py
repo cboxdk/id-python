@@ -67,3 +67,34 @@ def test_verifies_raw_bytes_not_a_reserialized_body() -> None:
         verify_webhook(re_serialized, case["header"], case["secret"], now=case["timestamp"])
         is False
     )
+
+
+def test_pins_the_signed_payload_order_the_server_uses() -> None:
+    """The wire format, stated once as a constant.
+
+    This package verifies against its OWN copy of the fixture, as every SDK does, so a
+    copy that drifts is silent: this suite stays green against the drifted bytes while
+    every delivery from the server fails in the field. The docblock above calls the
+    copies byte-for-byte identical and nothing enforced it — the templates were the one
+    field no test read.
+
+    Deliberately NOT derived from the file it guards: ``{timestamp}.{body}`` is the
+    contract with the sender, and a copy that says otherwise is wrong rather than
+    authoritative.
+    """
+    assert FIXTURE["signed_payload_template"] == "{timestamp}.{body}"
+    assert FIXTURE["header_template"] == "t={timestamp},v1={signature}"
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda case: case["name"])
+def test_builds_each_case_literal_from_the_published_templates(case: dict[str, Any]) -> None:
+    """The template and the literal are the same fact stated twice.
+
+    Either one edited alone is now a failure, which is what makes carrying both worth it:
+    the vector tests hash the literal, so a flipped template alone changed nothing.
+    """
+    signed_payload = FIXTURE["signed_payload_template"].format(
+        timestamp=case["timestamp"], body=case["body"]
+    )
+
+    assert signed_payload == case["signed_payload"]
