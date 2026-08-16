@@ -34,11 +34,24 @@ class AuthenticationError(CboxIdError):
         error: str | None = None,
         error_description: str | None = None,
         status: int | None = None,
+        retry_after: int | None = None,
     ) -> None:
         super().__init__(message)
         self.error = error
         self.error_description = error_description
         self.status = status
+        #: Seconds to wait, off the ``Retry-After`` header — set only on a 429.
+        #:
+        #: A 429 is the ONLY back-channel failure where the same request succeeds
+        #: unchanged if you wait; every other one needs a different request or a new
+        #: sign-in. The limiter says how long and this SDK dropped the header, so a
+        #: caller with a retry loop hammered a server already telling it to stop.
+        self.retry_after = retry_after
+
+    @property
+    def is_rate_limited(self) -> bool:
+        """Whether waiting and repeating the same request unchanged is worth it."""
+        return self.status == 429
 
     @classmethod
     def from_response(cls, reason: str, response: Any) -> AuthenticationError:
@@ -67,7 +80,13 @@ class AuthenticationError(CboxIdError):
         status = getattr(response, "status_code", None)
         detail = error if error is not None else f"HTTP {status}"
 
-        return cls(f"{reason}: {detail}", error, description, status)
+        # Seconds only. The HTTP-date form is legal per RFC 9110 and deliberately not
+        # parsed: guessing at clock skew is worse than saying nothing, and a 429 status
+        # still tells the caller to back off.
+        header = str(getattr(response, "headers", {}).get("Retry-After", "")).strip()
+        retry_after = int(header) if header.isdigit() else None
+
+        return cls(f"{reason}: {detail}", error, description, status, retry_after)
 
 
 class ManifestPublishError(CboxIdError):

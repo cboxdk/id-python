@@ -326,3 +326,33 @@ def test_logout_url_omits_an_empty_id_token_hint(fake: FakeInstance) -> None:
     bare = fake.client.logout_url(id_token_hint="")
     assert bare is not None
     assert "id_token_hint" not in urlparse(bare).query
+
+
+def test_carries_retry_after_off_a_429(fake: FakeInstance) -> None:
+    """A 429 is the only back-channel failure where waiting is the right response.
+
+    Every other one needs a different request or a new sign-in. The limiter says how
+    long, and dropping the header left a retry loop hammering a server that was already
+    telling it exactly when to stop.
+    """
+    fake.fail_next_token({"message": "Too Many Requests"}, 429, {"Retry-After": "42"})
+
+    with pytest.raises(AuthenticationError) as caught:
+        fake.client.refresh("some-token")
+
+    assert caught.value.status == 429
+    assert caught.value.retry_after == 42
+    assert caught.value.is_rate_limited is True
+
+
+def test_leaves_retry_after_none_for_an_http_date(fake: FakeInstance) -> None:
+    """Legal per RFC 9110 and deliberately not parsed — is_rate_limited still says back off."""
+    fake.fail_next_token(
+        {"message": "slow down"}, 429, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}
+    )
+
+    with pytest.raises(AuthenticationError) as caught:
+        fake.client.refresh("some-token")
+
+    assert caught.value.retry_after is None
+    assert caught.value.is_rate_limited is True
