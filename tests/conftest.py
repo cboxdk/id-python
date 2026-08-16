@@ -56,11 +56,22 @@ class FakeInstance:
     # Recorded by the endpoints, for assertions.
     revocations: list[dict[str, Any]] = field(default_factory=list)
     revocation_auth: list[str | None] = field(default_factory=list)
+    # A one-shot failure for the token endpoint, so a test can assert what the SDK makes
+    # of an RFC 6749 §5.2 error body without breaking the fake for every later call.
+    next_token_failure: tuple[object, int] | None = None
     jwks_fetches: int = 0
 
     def set_token_response(self, response: dict[str, Any]) -> None:
         self.token_response.clear()
         self.token_response.update(response)
+
+    def fail_next_token(self, body: object, status: int) -> None:
+        """Make the NEXT token-endpoint call fail, once.
+
+        A dict is served as JSON (an RFC 6749 §5.2 error body); a string is served
+        verbatim, which is how a proxy or captive portal answers.
+        """
+        self.next_token_failure = (body, status)
 
 
 @pytest.fixture
@@ -138,6 +149,17 @@ def fake() -> FakeInstance:
             state.jwks_fetches += 1
             return httpx.Response(200, json={"keys": list(served_keys)})
         if url == DISCOVERY["token_endpoint"]:
+            if state.next_token_failure is not None:
+                body, status = state.next_token_failure
+                state.next_token_failure = None
+
+                # A string is served verbatim — that is how a proxy or captive portal
+                # answers, and the case where the SDK must not invent an error code.
+                if isinstance(body, str):
+                    return httpx.Response(status, text=body)
+
+                return httpx.Response(status, json=body)
+
             form = dict(parse_qsl(request.content.decode()))
             if form.get("grant_type") == "client_credentials":
                 return httpx.Response(200, json={"access_token": "machine-token"})

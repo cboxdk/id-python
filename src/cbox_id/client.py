@@ -210,7 +210,7 @@ class CboxIdClient:
 
         response = self._http.post(self._endpoint("token_endpoint"), data=data)
         if response.status_code >= 400:
-            raise AuthenticationError(f"Machine token request failed: {response.text}")
+            raise AuthenticationError.from_response("Machine token request failed", response)
         token = response.json().get("access_token")
         if not isinstance(token, str):
             raise AuthenticationError("The token response had no access_token.")
@@ -233,7 +233,9 @@ class CboxIdClient:
 
         response = self._http.post(self._endpoint("token_endpoint"), data=data)
         if response.status_code >= 400:
-            raise AuthenticationError(f"Token refresh failed: {response.text}")
+            # invalid_grant here means the session is over; a 503 means the same token
+            # is still good shortly. One message string for both is what makes callers guess.
+            raise AuthenticationError.from_response("Token refresh failed", response)
 
         tokens: dict[str, Any] = response.json()
         access_token = tokens.get("access_token")
@@ -260,7 +262,7 @@ class CboxIdClient:
             return {}
         response = self._http.get(endpoint, headers={"Authorization": f"Bearer {access_token}"})
         if response.status_code >= 400:
-            raise AuthenticationError("Userinfo request failed.")
+            raise AuthenticationError.from_response("Userinfo request failed", response)
         result: dict[str, Any] = response.json()
         return result
 
@@ -272,32 +274,49 @@ class CboxIdClient:
             auth=(self._config.client_id, self._require_secret()),
         )
         if response.status_code >= 400:
-            raise AuthenticationError("Introspection request failed.")
+            raise AuthenticationError.from_response("Introspection request failed", response)
         result: dict[str, Any] = response.json()
         return result
 
     def revoke(self, token: str, token_type_hint: str | None = None) -> None:
-        """RFC 7009 token revocation (confidential-client auth).
+        """RFC 7009 token revocation.
 
         Revokes an access or refresh token; revoking a refresh token also drops the
         whole token family, so this is what a real "sign out everywhere" does.
+
+        PUBLIC CLIENTS TOO. This called ``_require_secret()`` and raised before the
+        request left the process, so the clients that most need revocation were the
+        ones that could not call it: a PKCE app authenticates with ``none``, holds no
+        secret, and is exactly the case where a refresh token sits in storage on a
+        device somebody has just signed out of. Cbox ID's revocation endpoint accepts
+        a public client and advertises ``none`` among its revocation auth methods; RFC
+        7009 §2.1 scopes each revocation to the calling client, so the only capability
+        opened is destroying a token you are already holding.
 
         Per RFC 7009 the server answers 200 for an unknown or already-revoked token,
         so a successful call means "the token is not valid any more", not "it
         existed". ``token_type_hint`` (``access_token`` / ``refresh_token``) only
         tells the server which store to search first.
         """
-        data = {"token": token}
+        data = {"token": token, "client_id": self._config.client_id}
         if token_type_hint:
             data["token_type_hint"] = token_type_hint
 
-        response = self._http.post(
-            self._endpoint("revocation_endpoint"),
-            data=data,
-            auth=(self._config.client_id, self._require_secret()),
-        )
+        # A confidential client still authenticates with Basic; a public one names
+        # itself in the body. An empty Basic header would authenticate as a
+        # confidential client with a blank password, which the server must refuse.
+        secret = self._config.client_secret
+        url = self._endpoint("revocation_endpoint")
+
+        # Branched rather than passing ``auth=None``: httpx types the argument as
+        # "credentials or the client default", and None is neither — a public client
+        # simply does not send the header.
+        if secret:
+            response = self._http.post(url, data=data, auth=(self._config.client_id, secret))
+        else:
+            response = self._http.post(url, data=data)
         if response.status_code >= 400:
-            raise AuthenticationError("Revocation request failed.")
+            raise AuthenticationError.from_response("Revocation request failed", response)
 
     def publish_manifest(self, manifest: AuthzManifest) -> dict[str, Any]:
         """Publish this app's declared roles & permissions manifest to Cbox ID.
@@ -365,7 +384,7 @@ class CboxIdClient:
 
         response = self._http.post(self._endpoint("token_endpoint"), data=data)
         if response.status_code >= 400:
-            raise AuthenticationError(f"Token exchange failed: {response.text}")
+            raise AuthenticationError.from_response("Token exchange failed", response)
         result: dict[str, Any] = response.json()
         return result
 

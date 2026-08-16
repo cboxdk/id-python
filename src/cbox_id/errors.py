@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class CboxIdError(Exception):
     """Base class for every error this SDK raises."""
@@ -16,7 +18,56 @@ class InvalidStateError(CboxIdError):
 
 
 class AuthenticationError(CboxIdError):
-    """Login could not be completed, or a token failed verification."""
+    """Login could not be completed, or a token failed verification.
+
+    ``error`` is the RFC 6749 §5.2 code the server sent, when it sent one. It used to
+    be discarded at every back-channel boundary, leaving a single message string for
+    outcomes that demand opposite responses: ``invalid_grant`` on a refresh means the
+    session is over and the person must sign in again, while a 503 means the same
+    token is still good in a moment. Code reduced to matching on prose either retries
+    what can never succeed, or signs out somebody who did not need to be.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        error: str | None = None,
+        error_description: str | None = None,
+        status: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.error = error
+        self.error_description = error_description
+        self.status = status
+
+    @classmethod
+    def from_response(cls, reason: str, response: Any) -> AuthenticationError:
+        """Build from a failed back-channel response, keeping what the server said.
+
+        Best-effort by design: a 502 from a proxy is HTML and a captive portal is
+        worse, and the caller still needs an exception rather than a decode error.
+        What it must never do is invent a code — an absent or unparseable ``error``
+        stays ``None``, so ``exc.error == "invalid_grant"`` is true only because the
+        server said so.
+        """
+        error: str | None = None
+        description: str | None = None
+
+        try:
+            body = response.json()
+        except Exception:  # noqa: BLE001 - any decode failure means "not an OAuth error"
+            body = None
+
+        if isinstance(body, dict):
+            raw_error = body.get("error")
+            raw_description = body.get("error_description")
+            error = raw_error if isinstance(raw_error, str) else None
+            description = raw_description if isinstance(raw_description, str) else None
+
+        status = getattr(response, "status_code", None)
+        detail = error if error is not None else f"HTTP {status}"
+
+        return cls(f"{reason}: {detail}", error, description, status)
 
 
 class ManifestPublishError(CboxIdError):

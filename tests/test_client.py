@@ -12,7 +12,6 @@ from cbox_id import (
     AuthenticationError,
     CboxIdClient,
     CboxIdConfig,
-    ConfigurationError,
     InvalidStateError,
 )
 from cbox_id.pkce import challenge
@@ -163,27 +162,70 @@ def test_revoke_posts_token_and_hint_with_client_auth(fake: FakeInstance) -> Non
     assert fake.client.revoke("refresh-abc", "refresh_token") is None
 
     expected = base64.b64encode(f"{CLIENT_ID}:secret-xyz".encode()).decode()
-    assert fake.revocations == [{"token": "refresh-abc", "token_type_hint": "refresh_token"}]
+    assert fake.revocations == [
+        {"token": "refresh-abc", "client_id": CLIENT_ID, "token_type_hint": "refresh_token"}
+    ]
     assert fake.revocation_auth == [f"Basic {expected}"]
 
 
 def test_revoke_omits_the_hint_when_not_given(fake: FakeInstance) -> None:
     fake.client.revoke("access-abc")
 
-    assert fake.revocations == [{"token": "access-abc"}]
+    assert fake.revocations == [{"token": "access-abc", "client_id": CLIENT_ID}]
 
 
-def test_revoke_requires_a_client_secret(fake: FakeInstance) -> None:
+def test_revoke_works_for_a_public_client(fake: FakeInstance) -> None:
+    """The clients that most need revocation were the ones that could not call it.
+
+    A PKCE app authenticates with ``none`` and holds no secret — and it is exactly the
+    case where a refresh token sits in storage on a device somebody has just signed out
+    of. ``revoke`` raised ``ConfigurationError`` before reaching the network, so every
+    such sign-out left the token valid for its whole lifetime.
+
+    The server opened this on 2026-08-12 and advertises ``none`` among its revocation
+    auth methods. The assertion this replaces described the world before that.
+    """
     public_client = CboxIdClient(
         CboxIdConfig(
             issuer=ISSUER, client_id=CLIENT_ID, redirect_uri="https://app.test/auth/callback"
         ),
         http_client=fake.http,
     )
-    with pytest.raises(ConfigurationError):
-        public_client.revoke("some-token")
 
-    assert fake.revocations == []
+    assert public_client.revoke("some-token") is None
+
+    assert fake.revocations == [{"token": "some-token", "client_id": CLIENT_ID}]
+    # No secret to build one from, and an empty Basic header would authenticate as a
+    # confidential client with a blank password — which the server must refuse.
+    assert fake.revocation_auth == [None]
+
+
+def test_oauth_error_code_survives_the_boundary(fake: FakeInstance) -> None:
+    """``invalid_grant`` means sign in again; a 503 means retry the same token.
+
+    Collapsing both into one message string is what leaves callers matching on prose,
+    and then either retrying what can never succeed or signing out somebody who did not
+    need to be.
+    """
+    fake.fail_next_token({"error": "invalid_grant", "error_description": "Token revoked."}, 400)
+
+    with pytest.raises(AuthenticationError) as caught:
+        fake.client.refresh("spent-token")
+
+    assert caught.value.error == "invalid_grant"
+    assert caught.value.error_description == "Token revoked."
+    assert caught.value.status == 400
+
+
+def test_does_not_invent_an_error_code(fake: FakeInstance) -> None:
+    """A proxy or captive portal answers HTML; the code must stay absent."""
+    fake.fail_next_token("<html>502 Bad Gateway</html>", 502)
+
+    with pytest.raises(AuthenticationError) as caught:
+        fake.client.refresh("some-token")
+
+    assert caught.value.error is None
+    assert caught.value.status == 502
 
 
 def test_accepts_an_es256_id_token(fake: FakeInstance) -> None:

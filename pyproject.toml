@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cbox-id-client"
-version = "0.6.1"
+version = "0.6.2"
 description = "Turnkey Cbox ID client for Python — OpenID Connect login (PKCE + id_token verification via JWKS), hosted profile-management redirect, machine tokens, UserInfo, RFC 7662 introspection, and webhook signature verification."
 readme = "README.md"
 requires-python = ">=3.10"
