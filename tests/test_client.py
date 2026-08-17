@@ -356,3 +356,55 @@ def test_leaves_retry_after_none_for_an_http_date(fake: FakeInstance) -> None:
 
     assert caught.value.retry_after is None
     assert caught.value.is_rate_limited is True
+
+
+def test_refuses_a_userinfo_response_naming_a_different_subject(fake: FakeInstance) -> None:
+    """OIDC Core §5.3.2: the UserInfo `sub` must match the id_token's, or it is not used.
+
+    UserInfo is fetched with a bearer token and its body carries no signature. The merge
+    used to spread it OVER the verified claims, so whatever it returned won — including
+    `sub`. The sibling PHP SDK had checked this from the start, so the two disagreed about
+    who the user is.
+    """
+    fake.userinfo_response = {"sub": "victim-9", "email": "victim@acme.com"}
+
+    with pytest.raises(AuthenticationError, match="does not match"):
+        fake.client.authenticate(code="auth-code", state="state-1", **STORED)
+
+
+def test_userinfo_enriches_but_never_overrides_a_signed_claim(fake: FakeInstance) -> None:
+    """`org` is an authorization claim: whoever sets it decides which tenant this is."""
+    fake.userinfo_response = {
+        "sub": "user-1",
+        "email": "ada@acme.com",
+        "name": "Ada",
+        "org": "org-admin",
+        "title": "Engineer",
+    }
+
+    user = fake.client.authenticate(code="auth-code", state="state-1", **STORED)
+
+    assert user.organization_id == "org-1"
+    # …and the enrichment still happens, which is why the merge exists at all.
+    assert user.claims["title"] == "Engineer"
+
+
+def test_refuses_an_openid_login_with_no_id_token(fake: FakeInstance) -> None:
+    """Identity would otherwise come from UserInfo alone, and the nonce never be used."""
+    fake.set_token_response({"access_token": "access-abc", "expires_in": 3600})
+
+    with pytest.raises(AuthenticationError, match="no id_token"):
+        fake.client.authenticate(
+            code="auth-code", state="state-1", scopes=["openid", "email"], **STORED
+        )
+
+
+def test_allows_a_non_openid_flow_without_an_id_token(fake: FakeInstance) -> None:
+    """A caller who never asked for openid is running OAuth, not OIDC."""
+    fake.set_token_response({"access_token": "access-abc", "expires_in": 3600})
+
+    user = fake.client.authenticate(
+        code="auth-code", state="state-1", scopes=["api.read"], **STORED
+    )
+
+    assert user.id == "user-1"

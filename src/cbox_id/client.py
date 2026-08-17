@@ -107,11 +107,17 @@ class CboxIdClient:
         nonce: str | None,
         error: str | None = None,
         redirect_uri: str | None = None,
+        scopes: list[str] | None = None,
     ) -> CboxUser:
         """Complete login on your callback route; return the authenticated user.
 
         Raises :class:`InvalidStateError` when state does not match, and
         :class:`AuthenticationError` on any other failure.
+
+        ``scopes`` is what THIS authorization asked for, when you overrode the configured
+        set at :meth:`authorization_url`. It is read so the response can be judged against
+        what was requested: an ``openid`` login that returns no id_token is a protocol
+        violation, and a flow that never asked cannot be held to it.
         """
         if not state or not expected_state or not hmac.compare_digest(state, expected_state):
             raise InvalidStateError(
@@ -128,10 +134,39 @@ class CboxIdClient:
             raise AuthenticationError("No access token was returned.")
 
         id_token = tokens.get("id_token")
-        claims: dict[str, Any] = {}
+        verified: dict[str, Any] = {}
         if isinstance(id_token, str):
-            claims = self._verify_id_token(id_token, nonce)
-        claims = {**claims, **self.userinfo(access_token)}
+            verified = self._verify_id_token(id_token, nonce)
+        elif "openid" in (scopes if scopes is not None else self._config.scopes):
+            # An openid request without an id_token is a protocol violation, and refusing
+            # it is the difference between an authenticated login and a bearer token:
+            # otherwise the identity below comes from UserInfo alone, whose body nothing
+            # signed, and the stored nonce is never used.
+            raise AuthenticationError(
+                "An openid login returned no id_token, so the identity could not be verified."
+            )
+
+        profile = self.userinfo(access_token)
+
+        # OIDC Core §5.3.2: the UserInfo `sub` MUST match the id_token's, and when it does
+        # not the response MUST NOT be used. UserInfo is fetched with a bearer token and
+        # carries no signature of its own, so without this an IdP — or anything able to
+        # answer as one — returns {"sub": "somebody-else"} and it becomes the identity.
+        verified_sub = verified.get("sub")
+        profile_sub = profile.get("sub")
+        if (
+            isinstance(verified_sub, str)
+            and isinstance(profile_sub, str)
+            and not hmac.compare_digest(verified_sub, profile_sub)
+        ):
+            raise AuthenticationError(
+                "The UserInfo subject does not match the verified id_token."
+            )
+
+        # ENRICHES, NEVER REPLACES. UserInfo fills in what a minimal id_token omits and
+        # the verified claims go back on top, so the merge cannot move `sub`, `iss`, `aud`
+        # or anything else the signature covered. The merge used to run the other way.
+        claims: dict[str, Any] = {**profile, **verified}
 
         sub = claims.get("sub")
         if not isinstance(sub, str) or sub == "":

@@ -59,6 +59,16 @@ class FakeInstance:
     # A one-shot failure for the token endpoint, so a test can assert what the SDK makes
     # of an RFC 6749 §5.2 error body without breaking the fake for every later call.
     next_token_failure: tuple[object, int, dict[str, str]] | None = None
+    #: What /oauth/userinfo answers. Overridable so a test can make it disagree with the
+    #: signed id_token, which is the only way OIDC Core §5.3.2 is observable.
+    userinfo_response: dict[str, Any] = field(
+        default_factory=lambda: {
+            "sub": "user-1",
+            "email": "ada@acme.com",
+            "name": "Ada",
+            "org": "org-1",
+        }
+    )
     jwks_fetches: int = 0
 
     def set_token_response(self, response: dict[str, Any]) -> None:
@@ -167,10 +177,7 @@ def fake() -> FakeInstance:
                 return httpx.Response(200, json={"access_token": "machine-token"})
             return httpx.Response(200, json=state.token_response)
         if url == DISCOVERY["userinfo_endpoint"]:
-            return httpx.Response(
-                200,
-                json={"sub": "user-1", "email": "ada@acme.com", "name": "Ada", "org": "org-1"},
-            )
+            return httpx.Response(200, json=state.userinfo_response)
         if url == DISCOVERY["introspection_endpoint"]:
             return httpx.Response(200, json={"active": True, "sub": "user-1", "scope": "openid"})
         if url == DISCOVERY["revocation_endpoint"]:
