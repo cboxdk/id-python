@@ -98,3 +98,55 @@ def test_builds_each_case_literal_from_the_published_templates(case: dict[str, A
     )
 
     assert signed_payload == case["signed_payload"]
+
+
+def _case(name: str) -> dict[str, Any]:
+    return next(c for c in CASES if c["name"] == name)
+
+
+def test_rejects_a_signature_truncated_to_a_valid_prefix() -> None:
+    """A signature is accepted only in full, and only at its exact length.
+
+    ``hmac.compare_digest`` gives both properties for free — which is precisely why
+    nothing asserted them, and why a rewrite could quietly lose them. Verified across the
+    SDKs: replacing the comparison with an 8-character prefix match left every suite
+    green.
+
+    Every character present here is correct; there are just fewer of them, which is
+    exactly what a prefix comparison accepts and a full one refuses.
+    """
+    case = _case("envelope")
+    truncated = f"t={case['timestamp']},v1={case['signature'][:32]}"
+
+    assert (
+        verify_webhook(case["body"], truncated, case["secret"], now=case["timestamp"]) is False
+    )
+
+
+def test_rejects_a_valid_signature_with_anything_appended() -> None:
+    """The digest is intact and complete; there is simply more after it."""
+    case = _case("envelope")
+
+    assert (
+        verify_webhook(
+            case["body"], case["header"] + "00", case["secret"], now=case["timestamp"]
+        )
+        is False
+    )
+
+
+def test_rejects_a_signature_differing_only_in_its_last_character() -> None:
+    """The far end of the digest, where a comparison that stops early never looks."""
+    case = _case("envelope")
+    signature = str(case["signature"])
+    flipped = signature[:-1] + ("1" if signature.endswith("0") else "0")
+
+    assert (
+        verify_webhook(
+            case["body"],
+            f"t={case['timestamp']},v1={flipped}",
+            case["secret"],
+            now=case["timestamp"],
+        )
+        is False
+    )
