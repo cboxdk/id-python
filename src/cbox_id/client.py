@@ -6,7 +6,7 @@ import hmac
 import json
 import time
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 import jwt
@@ -53,6 +53,7 @@ class CboxIdClient:
     def __init__(self, config: CboxIdConfig, http_client: httpx.Client | None = None) -> None:
         if not config.issuer:
             raise ConfigurationError("Cbox ID config `issuer` is required.")
+        _assert_secure_issuer(config.issuer)
         if not config.client_id:
             raise ConfigurationError("Cbox ID config `client_id` is required.")
         if not config.redirect_uri:
@@ -159,9 +160,7 @@ class CboxIdClient:
             and isinstance(profile_sub, str)
             and not hmac.compare_digest(verified_sub, profile_sub)
         ):
-            raise AuthenticationError(
-                "The UserInfo subject does not match the verified id_token."
-            )
+            raise AuthenticationError("The UserInfo subject does not match the verified id_token.")
 
         # ENRICHES, NEVER REPLACES. UserInfo fills in what a minimal id_token omits and
         # the verified claims go back on top, so the merge cannot move `sub`, `iss`, `aud`
@@ -276,6 +275,16 @@ class CboxIdClient:
         access_token = tokens.get("access_token")
         if not isinstance(access_token, str):
             raise AuthenticationError("The refresh response carried no access token.")
+
+        # VERIFIED BEFORE IT IS HANDED BACK. This returned the refreshed id_token
+        # unchecked, so an application that updates its session claims from
+        # ``refresh().id_token`` accepted a forged, expired, wrong-audience or
+        # wrong-issuer token — having verified only the one it got at login. The nonce is
+        # deliberately not re-checked: OIDC Core §12.2 says a refreshed id_token need not
+        # carry one.
+        refreshed_id_token = tokens.get("id_token")
+        if isinstance(refreshed_id_token, str):
+            self._verify_id_token(refreshed_id_token, None)
 
         expires_in = tokens.get("expires_in")
         scope = tokens.get("scope")
@@ -467,6 +476,15 @@ class CboxIdClient:
         doc: dict[str, Any] = response.json()
         if not isinstance(doc.get("issuer"), str):
             raise AuthenticationError("The discovery document was missing an issuer.")
+        # RFC 8414 §3.3: the `issuer` in the document MUST match the one it was fetched
+        # for. Without this a host answering with another tenant's document silently
+        # redirects the whole flow — credentials to that tenant's endpoints, verification
+        # against its JWKS — while the caller still believes it is talking to the issuer
+        # it configured.
+        if doc["issuer"].rstrip("/") != self._config.issuer.rstrip("/"):
+            raise AuthenticationError(
+                f"The discovery document is for a different issuer ({doc['issuer']})."
+            )
         self._discovery_cache = (doc, time.time() + self._config.cache_ttl_seconds)
         return doc
 
@@ -528,4 +546,28 @@ def _find_key(jwks: dict[str, Any], kid: Any) -> dict[str, Any] | None:
     return next(
         (k for k in keys if isinstance(k, dict) and k.get("kid") == kid),
         None,
+    )
+
+
+def _assert_secure_issuer(issuer: str) -> None:
+    """An issuer must be HTTPS.
+
+    Everything this SDK sends there carries a credential: the authorization code, the
+    PKCE verifier, the client secret, the refresh token. Over ``http`` a network attacker
+    reads all of them — and replaces the discovery document and JWKS, after which a forged
+    id_token verifies cleanly and the whole verification chain proves nothing.
+
+    Loopback stays allowed: a native app's own callback listener is loopback by definition
+    (RFC 8252), and a development instance runs there.
+    """
+    parsed = urlparse(issuer)
+
+    if parsed.scheme == "https":
+        return
+
+    if parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+        return
+
+    raise ConfigurationError(
+        f"Cbox ID config `issuer` must be https (got {parsed.scheme}://{parsed.hostname})."
     )

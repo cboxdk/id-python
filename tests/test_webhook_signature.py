@@ -118,9 +118,7 @@ def test_rejects_a_signature_truncated_to_a_valid_prefix() -> None:
     case = _case("envelope")
     truncated = f"t={case['timestamp']},v1={case['signature'][:32]}"
 
-    assert (
-        verify_webhook(case["body"], truncated, case["secret"], now=case["timestamp"]) is False
-    )
+    assert verify_webhook(case["body"], truncated, case["secret"], now=case["timestamp"]) is False
 
 
 def test_rejects_a_valid_signature_with_anything_appended() -> None:
@@ -128,9 +126,7 @@ def test_rejects_a_valid_signature_with_anything_appended() -> None:
     case = _case("envelope")
 
     assert (
-        verify_webhook(
-            case["body"], case["header"] + "00", case["secret"], now=case["timestamp"]
-        )
+        verify_webhook(case["body"], case["header"] + "00", case["secret"], now=case["timestamp"])
         is False
     )
 

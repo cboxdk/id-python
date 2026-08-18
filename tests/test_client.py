@@ -12,6 +12,7 @@ from cbox_id import (
     AuthenticationError,
     CboxIdClient,
     CboxIdConfig,
+    ConfigurationError,
     InvalidStateError,
 )
 from cbox_id.pkce import challenge
@@ -408,3 +409,80 @@ def test_allows_a_non_openid_flow_without_an_id_token(fake: FakeInstance) -> Non
     )
 
     assert user.id == "user-1"
+
+
+def test_config_refuses_a_plaintext_issuer() -> None:
+    """Everything this SDK sends the issuer carries a credential.
+
+    Over ``http`` a network attacker reads the code, the PKCE verifier and the client
+    secret — and swaps the discovery document and JWKS, after which a forged id_token
+    verifies cleanly and none of the verification below proves anything.
+    """
+    with pytest.raises(ConfigurationError) as exc:
+        CboxIdClient(
+            CboxIdConfig(
+                issuer="http://id.test",
+                client_id=CLIENT_ID,
+                redirect_uri="https://app.test/cb",
+            )
+        )
+
+    assert "https" in str(exc.value)
+
+
+def test_config_allows_a_loopback_issuer_over_http() -> None:
+    """A development instance and RFC 8252's native-app listener are both loopback."""
+    for issuer in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        CboxIdClient(
+            CboxIdConfig(issuer=issuer, client_id=CLIENT_ID, redirect_uri="https://app.test/cb")
+        )
+
+
+def test_discovery_must_be_for_the_configured_issuer(fake: FakeInstance) -> None:
+    """RFC 8414 §3.3.
+
+    A host answering with another tenant's document would otherwise redirect the whole
+    flow: credentials to that tenant's token endpoint, verification against its JWKS —
+    while the caller still believes it is talking to the issuer it configured.
+    """
+    fake.discovery_document["issuer"] = "https://evil.test"
+
+    with pytest.raises(AuthenticationError) as exc:
+        fake.client.create_authorization_request()
+
+    assert "different issuer" in str(exc.value)
+
+
+def test_refreshed_id_tokens_are_verified(fake: FakeInstance) -> None:
+    """A forged id_token in the refresh response must not reach the caller.
+
+    An app that updates its session claims from ``refresh().id_token`` verified only the
+    token it got at login; this one arrives after, on a channel it never checks.
+    """
+    fake.set_token_response(
+        {
+            "access_token": "access-2",
+            "id_token": fake.sign_foreign_id_token(
+                {"iss": ISSUER, "aud": CLIENT_ID, "sub": "user-1"}
+            ),
+            "refresh_token": "refresh-2",
+            "expires_in": 3600,
+        }
+    )
+
+    with pytest.raises(AuthenticationError):
+        fake.client.refresh("refresh-1")
+
+
+def test_a_refreshed_id_token_needs_no_nonce(fake: FakeInstance) -> None:
+    """OIDC Core §12.2 — re-checking the login nonce here would break every refresh."""
+    fake.set_token_response(
+        {
+            "access_token": "access-2",
+            "id_token": fake.sign_id_token({"iss": ISSUER, "aud": CLIENT_ID, "sub": "user-1"}),
+            "refresh_token": "refresh-2",
+            "expires_in": 3600,
+        }
+    )
+
+    assert fake.client.refresh("refresh-1").id_token is not None

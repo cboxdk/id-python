@@ -70,6 +70,9 @@ class FakeInstance:
         }
     )
     jwks_fetches: int = 0
+    #: What /.well-known/openid-configuration answers. Mutable so a test can make the
+    #: document claim a different issuer than the one the client was configured with.
+    discovery_document: dict[str, Any] = field(default_factory=lambda: dict(DISCOVERY))
 
     def set_token_response(self, response: dict[str, Any]) -> None:
         self.token_response.clear()
@@ -156,7 +159,7 @@ def fake() -> FakeInstance:
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if url.endswith("/.well-known/openid-configuration"):
-            return httpx.Response(200, json=DISCOVERY)
+            return httpx.Response(200, json=state.discovery_document)
         if url == DISCOVERY["jwks_uri"]:
             state.jwks_fetches += 1
             return httpx.Response(200, json={"keys": list(served_keys)})
