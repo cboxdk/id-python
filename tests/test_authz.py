@@ -162,3 +162,78 @@ def test_publish_requires_client_secret() -> None:
 
     with pytest.raises(ConfigurationError):
         client.publish_manifest(build_manifest())
+
+
+def build_staff_manifest() -> AuthzManifest:
+    return (
+        AuthzManifest()
+        .permission("support:impersonate", "Act as a customer")
+        .permission("parcels:read", "View parcels", tenant_assignable=True)
+        .role(
+            "support",
+            "Support",
+            "Vendor staff",
+            permissions=["support:impersonate", "parcels:read"],
+            tenant_assignable=False,
+        )
+        .role("viewer", "Viewer", permissions=["parcels:read"])
+    )
+
+
+def test_pushed_body_marks_a_staff_role_and_a_self_serve_permission() -> None:
+    recorder = Recorder()
+    client = make_client(recorder)
+
+    client.publish_manifest(build_staff_manifest())
+
+    # Asserted on what crossed the wire, not on to_dict(): the server reads an ABSENT role
+    # flag as "every tenant may grant this", so a body that lost it would publish the
+    # support role to every customer administrator.
+    roles = {role["key"]: role for role in recorder.manifest_body["roles"]}  # type: ignore[union-attr]
+    assert roles["support"].get("tenant_assignable") is False
+    permissions = {p["key"]: p for p in recorder.manifest_body["permissions"]}  # type: ignore[union-attr]
+    assert permissions["parcels:read"].get("tenant_assignable") is True
+
+
+def test_pushed_body_omits_the_flags_in_their_default_state() -> None:
+    recorder = Recorder()
+    client = make_client(recorder)
+
+    client.publish_manifest(build_staff_manifest())
+
+    # Minimal on purpose: the defaults are the server's own, and leaving them out keeps a
+    # manifest that never used the flags byte-identical to the body it always sent.
+    roles = {role["key"]: role for role in recorder.manifest_body["roles"]}  # type: ignore[union-attr]
+    assert "tenant_assignable" not in roles["viewer"]
+    permissions = {p["key"]: p for p in recorder.manifest_body["permissions"]}  # type: ignore[union-attr]
+    assert "tenant_assignable" not in permissions["support:impersonate"]
+
+
+def test_marking_a_role_staff_only_changes_the_version() -> None:
+    # An unchanged version skips the sync, so a flag the hash cannot see never lands.
+    assignable = AuthzManifest().permission("a:read").role("r", "R", permissions=["a:read"])
+    staff = (
+        AuthzManifest()
+        .permission("a:read")
+        .role("r", "R", permissions=["a:read"], tenant_assignable=False)
+    )
+    self_serve = (
+        AuthzManifest()
+        .permission("a:read", tenant_assignable=True)
+        .role("r", "R", permissions=["a:read"])
+    )
+
+    versions = {m.to_dict()["version"] for m in (assignable, staff, self_serve)}
+    assert len(versions) == 3
+
+
+@pytest.mark.parametrize("value", ["false", 0, None])
+def test_a_role_flag_that_is_not_a_bool_is_refused(value: object) -> None:
+    # "false" is truthy: read loosely, it would publish a staff role as tenant-assignable.
+    with pytest.raises(ConfigurationError, match='role "support" tenant_assignable must be'):
+        AuthzManifest().role("support", "Support", tenant_assignable=value)  # type: ignore[arg-type]
+
+
+def test_a_permission_flag_that_is_not_a_bool_is_refused() -> None:
+    with pytest.raises(ConfigurationError, match='permission "a:read" tenant_assignable must be'):
+        AuthzManifest().permission("a:read", tenant_assignable="true")  # type: ignore[arg-type]
