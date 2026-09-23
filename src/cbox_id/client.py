@@ -5,6 +5,8 @@ from __future__ import annotations
 import hmac
 import json
 import time
+from collections.abc import Sequence
+from enum import Enum
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
@@ -12,6 +14,7 @@ import httpx
 import jwt
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
+from . import claims as _claims
 from .authz import AuthzManifest
 from .errors import (
     AuthenticationError,
@@ -19,7 +22,13 @@ from .errors import (
     InvalidStateError,
     ManifestPublishError,
 )
-from .models import AuthorizationRequest, CboxIdConfig, CboxUser, RefreshedTokens
+from .models import (
+    AuthorizationPrompt,
+    AuthorizationRequest,
+    CboxIdConfig,
+    CboxUser,
+    RefreshedTokens,
+)
 from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_webhook
 
@@ -72,10 +81,35 @@ class CboxIdClient:
         *,
         scopes: list[str] | None = None,
         state: str | None = None,
-        prompt: str | None = None,
+        prompt: str | AuthorizationPrompt | Sequence[str | AuthorizationPrompt] | None = None,
         redirect_uri: str | None = None,
+        organization: str | None = None,
+        organization_hint: str | None = None,
     ) -> AuthorizationRequest:
-        """Begin login. Persist the returned ``state``/``code_verifier``/``nonce``."""
+        """Begin login. Persist the returned ``state``/``code_verifier``/``nonce``.
+
+        ``prompt`` is one value or several (a list, or a space-separated string). ``none``
+        cannot be combined with anything else — OIDC Core §3.1.2.1 makes that an error at
+        the server, so it is refused here, where the traceback still points at your code.
+
+        ``organization`` binds the sign-in to one organization. The person must hold an
+        active membership in it; if they do not, the callback carries
+        ``error=access_denied`` and :meth:`authenticate` raises an
+        :class:`AuthenticationError` whose ``error`` is ``"access_denied"``. The id is
+        echoed on the returned request: persist it and hand it back to
+        :meth:`authenticate` as ``organization``.
+
+        ``organization_hint`` preselects an organization in the hosted picker without
+        binding to it — the person can still choose another. Pair it with
+        ``prompt=AuthorizationPrompt.SELECT_ORGANIZATION`` to always show the picker with
+        your guess on top.
+
+        Raises :class:`ConfigurationError` for options that contradict each other, before
+        anything is sent.
+        """
+        prompts = _prompt_values(prompt)
+        _assert_organization_options(organization, organization_hint, prompts)
+
         code_verifier = create_verifier()
         the_state = state or random_token(16)
         nonce = random_token(16)
@@ -90,12 +124,52 @@ class CboxIdClient:
             "code_challenge": challenge(code_verifier),
             "code_challenge_method": "S256",
         }
-        if prompt:
-            params["prompt"] = prompt
+        if prompts:
+            params["prompt"] = " ".join(prompts)
+        if organization is not None:
+            params["organization"] = organization
+        if organization_hint is not None:
+            params["organization_hint"] = organization_hint
 
         url = f"{self._endpoint('authorization_endpoint')}?{urlencode(params)}"
         return AuthorizationRequest(
-            url=url, state=the_state, code_verifier=code_verifier, nonce=nonce
+            url=url,
+            state=the_state,
+            code_verifier=code_verifier,
+            nonce=nonce,
+            organization=organization,
+        )
+
+    def switch_organization(
+        self,
+        organization_id: str,
+        *,
+        scopes: list[str] | None = None,
+        state: str | None = None,
+        prompt: str | AuthorizationPrompt | Sequence[str | AuthorizationPrompt] | None = None,
+        redirect_uri: str | None = None,
+    ) -> AuthorizationRequest:
+        """Switch the signed-in person to another organization.
+
+        A new authorization bound to ``organization_id``: persist and redirect exactly as
+        for :meth:`create_authorization_request` — it is one, with ``organization`` set.
+
+        Cbox ID already holds the person's session, so this is normally a redirect there
+        and straight back with no sign-in form. The tokens that come back carry the new
+        ``org``, ``org_role``, ``roles`` and ``permissions``; replace your session with them
+        rather than patching the old one, because every one of those can differ between
+        organizations.
+
+        A person who is not (or is no longer) an active member of that organization comes
+        back with ``error=access_denied``, which :meth:`authenticate` raises as an
+        :class:`AuthenticationError` with ``error == "access_denied"``.
+        """
+        return self.create_authorization_request(
+            scopes=scopes,
+            state=state,
+            prompt=prompt,
+            redirect_uri=redirect_uri,
+            organization=organization_id,
         )
 
     def authenticate(
@@ -109,11 +183,19 @@ class CboxIdClient:
         error: str | None = None,
         redirect_uri: str | None = None,
         scopes: list[str] | None = None,
+        organization: str | None = None,
+        error_description: str | None = None,
     ) -> CboxUser:
         """Complete login on your callback route; return the authenticated user.
 
         Raises :class:`InvalidStateError` when state does not match, and
-        :class:`AuthenticationError` on any other failure.
+        :class:`AuthenticationError` on any other failure. When the callback itself
+        carried an ``error``, that code is on the exception's ``error`` attribute:
+        ``access_denied`` after :meth:`switch_organization` means "not a member of that
+        organization", which an app answers by switching back, not by signing out.
+
+        ``organization`` is the id :meth:`create_authorization_request` echoed, when the
+        sign-in was bound to one. Tokens for any other organization are refused.
 
         ``scopes`` is what THIS authorization asked for, when you overrode the configured
         set at :meth:`authorization_url`. It is read so the response can be judged against
@@ -125,7 +207,13 @@ class CboxIdClient:
                 "The login state did not match — the request may be forged or stale."
             )
         if error:
-            raise AuthenticationError(f"Cbox ID returned an error: {error}")
+            # The code travels as `error`, not only in the message: `access_denied` after a
+            # switch means "not a member of that organization", and an app has to tell that
+            # apart from every other failure without matching on prose.
+            detail = f" ({error_description})" if error_description else ""
+            raise AuthenticationError(
+                f"Cbox ID returned an error: {error}{detail}", error, error_description
+            )
         if not code or not code_verifier:
             raise AuthenticationError("The callback was missing an authorization code.")
 
@@ -171,12 +259,27 @@ class CboxIdClient:
         if not isinstance(sub, str) or sub == "":
             raise AuthenticationError("The verified token carried no subject.")
 
+        active = _claims.organization(claims)
+
+        # CHECKED, NOT TRUSTED. An instance that predates the `organization` parameter
+        # ignores it and returns tokens for whichever organization the session already
+        # had — and an app that switched to "Globex" would then show Globex's name over
+        # Acme's data. Truthiness, not `is not None`: an empty id can never have been
+        # sent (create_authorization_request refuses it), so it only ever means "unbound".
+        if organization and (active is None or active.id != organization):
+            got = active.id if active is not None else "no organization"
+            raise AuthenticationError(
+                f"The sign-in was bound to organization {organization}, but the tokens are "
+                f"for {got}. The instance may not support organization selection."
+            )
+
+        sid = verified.get("sid")
         expires_in = tokens.get("expires_in")
         return CboxUser(
             id=sub,
             email=claims.get("email") if isinstance(claims.get("email"), str) else None,
             name=claims.get("name") if isinstance(claims.get("name"), str) else None,
-            organization_id=claims.get("org") if isinstance(claims.get("org"), str) else None,
+            organization_id=active.id if active is not None else None,
             claims=claims,
             access_token=access_token,
             refresh_token=tokens.get("refresh_token")
@@ -184,6 +287,13 @@ class CboxIdClient:
             else None,
             id_token=id_token if isinstance(id_token, str) else None,
             expires_in=int(expires_in) if isinstance(expires_in, int | float) else 0,
+            organization=active,
+            roles=_claims.roles(claims),
+            permissions=_claims.permissions(claims),
+            actor=_claims.actor(claims),
+            # From the signed id_token alone: a `sid` is what a back-channel logout names
+            # to end a session, and UserInfo's unsigned body must not be able to pick it.
+            session_id=sid if isinstance(sid, str) and sid != "" else None,
         )
 
     # -- hosted profile & logout ---------------------------------------------
@@ -537,6 +647,70 @@ class CboxIdClient:
                 "This call requires a `client_secret`, but none is configured."
             )
         return self._config.client_secret
+
+
+def _prompt_values(
+    prompt: str | AuthorizationPrompt | Sequence[str | AuthorizationPrompt] | None,
+) -> list[str]:
+    """Normalise ``prompt`` to a de-duplicated list, refusing what the server would refuse."""
+    if prompt is None:
+        return []
+
+    # A plain string is split on whitespace — the wire form is space-separated, and a
+    # caller who already wrote "login consent" means two values, not one. An enum member
+    # is a `str` too, so it is caught first and read by value.
+    if isinstance(prompt, AuthorizationPrompt):
+        raw: list[str] = [prompt.value]
+    elif isinstance(prompt, str):
+        raw = prompt.split()
+    else:
+        raw = [item.value if isinstance(item, Enum) else item for item in prompt]
+
+    values = list(dict.fromkeys(value for value in raw if value))
+
+    # OIDC Core §3.1.2.1: `none` with any other value is an error. Failing here names the
+    # call that built it; failing at the server names nothing the caller can find.
+    if AuthorizationPrompt.NONE.value in values and len(values) > 1:
+        raise ConfigurationError("`prompt='none'` cannot be combined with another prompt value.")
+
+    return values
+
+
+def _assert_organization_options(
+    organization: str | None, organization_hint: str | None, prompts: list[str]
+) -> None:
+    """Refuse organization options that contradict each other.
+
+    Each of these would reach the server as a request with two incompatible meanings and
+    come back as a generic error after a full redirect — far from the line that built it.
+    """
+    # An empty id is not "no organization" at the server — it is a parameter that is
+    # present and names nothing. Omit the option instead.
+    if organization == "":
+        raise ConfigurationError(
+            "`organization` is empty. Omit it to sign in without binding to an organization."
+        )
+    if organization_hint == "":
+        raise ConfigurationError(
+            "`organization_hint` is empty. Omit it when you have no organization to suggest."
+        )
+
+    if organization is None:
+        return
+
+    # `organization` binds to an existing organization; both prompts below ask the person
+    # to choose or create one. Sending both leaves the server to guess which you meant.
+    if AuthorizationPrompt.SELECT_ORGANIZATION.value in prompts:
+        raise ConfigurationError(
+            "`organization` binds the sign-in to one organization, so "
+            "`prompt='select_organization'` has nothing to choose. Use `organization_hint` "
+            "to preselect an organization in the picker instead."
+        )
+    if AuthorizationPrompt.CREATE_ORGANIZATION.value in prompts:
+        raise ConfigurationError(
+            "`organization` binds the sign-in to an existing organization and "
+            "`prompt='create_organization'` creates a new one. Send one or the other."
+        )
 
 
 def _find_key(jwks: dict[str, Any], kid: Any) -> dict[str, Any] | None:
