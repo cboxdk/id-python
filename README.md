@@ -7,6 +7,9 @@ a callback, not a rewrite — and adds the conveniences a hosted-identity produc
 - **Login** — PKCE (S256), a CSRF `state`, a nonce, and full `id_token` verification
   (signature against the instance's JWKS via [PyJWT](https://pyjwt.readthedocs.io),
   plus issuer, audience and nonce).
+- **Organizations** — bind a sign-in to one organization, switch between them, and read
+  the person's tier, roles and permissions there — and whether a support agent is acting
+  as them.
 - **Hosted profile management** — a redirect to the instance's own account page.
 - **Back-channel calls** — machine (client-credentials) tokens, UserInfo, RFC 7662
   introspection, RFC 7009 revocation.
@@ -81,7 +84,7 @@ request abstraction invented to avoid them.
 
 ## Install
 
-> **Where do `issuer`, `clientId` and `redirectUri` come from?**
+> **Where do `issuer`, `client_id` and `redirect_uri` come from?**
 > Register an application in your environment console — see
 > [Integrate your app](https://github.com/cboxdk/cbox-id/blob/main/docs/getting-started/integrate-your-app.md).
 
@@ -90,7 +93,7 @@ request abstraction invented to avoid them.
 > below works; you install it from source.
 
 ```bash
-pip install git+https://github.com/cboxdk/id-python@v0.6.1
+pip install git+https://github.com/cboxdk/id-python@v0.8.0
 ```
 
 ## Log in users
@@ -124,6 +127,145 @@ user = client.authenticate(
 # key your local account on user.id (the stable subject)
 ```
 
+A callback that carried an error raises `AuthenticationError` with the code on
+`exc.error` (and `exc.error_description`), so you can branch on `access_denied` without
+matching on the message. Pass `error=request.args.get("error")` and
+`error_description=request.args.get("error_description")` through to `authenticate`.
+
+## Organizations
+
+A sign-in can be bound to one organization. The tokens then carry `org`, `org_name`, the
+person's membership tier in it (`org_role`), and the app `roles` / `permissions` they hold
+**there** — so switching organization means a new authorization, not a flag on the old
+session.
+
+```python
+from cbox_id import AuthorizationPrompt
+
+# Bind to an organization you already know (the person must be an active member):
+req = client.create_authorization_request(organization="org_2x…")
+
+# Always show the hosted organization picker, with your guess preselected:
+req = client.create_authorization_request(
+    prompt=AuthorizationPrompt.SELECT_ORGANIZATION,
+    organization_hint="org_2x…",
+)
+
+# Hosted "create a team" step; the person becomes its owner and the sign-in
+# continues bound to the new organization:
+req = client.create_authorization_request(prompt=AuthorizationPrompt.CREATE_ORGANIZATION)
+```
+
+| Argument | Sent as | Meaning |
+|---|---|---|
+| `organization` | `organization` | Bind the sign-in to this organization. |
+| `organization_hint` | `organization_hint` | Preselect it in the picker; the person may choose another. |
+| `prompt=AuthorizationPrompt.SELECT_ORGANIZATION` | `prompt=select_organization` | Always show the picker. |
+| `prompt=AuthorizationPrompt.CREATE_ORGANIZATION` | `prompt=create_organization` | Create an organization first. |
+
+`prompt` takes one value or a list (plain strings work too, and a space-separated string
+is split). `organization` cannot be combined with either organization prompt — it has
+already made the choice they ask the person to make — so the SDK raises
+`ConfigurationError` rather than sending it; use `organization_hint` with the picker
+instead. An empty `organization` or `organization_hint`, and `prompt="none"` combined
+with anything else, are refused the same way.
+
+### Switching
+
+`client.switch_organization(org_id)` is `create_authorization_request(organization=org_id)`
+under a name that says what it is for. Persist and redirect exactly as for a sign-in;
+Cbox ID already has the person's session, so they normally come straight back without
+seeing a form.
+
+**The binding is checked, not trusted.** The request echoes `req.organization`: persist it
+with the rest and pass it back to `authenticate(organization=…)`, which refuses tokens for
+any other organization. An instance that predates organization selection ignores the
+parameter and answers for whichever organization the session already had — without the
+check, your app would show the new organization's name over the old one's data.
+
+```python
+from cbox_id import AuthenticationError
+
+
+@app.get("/auth/switch-organization")
+def switch_organization():
+    req = client.switch_organization(request.args["org"])
+    session["cbox"] = {
+        "state": req.state,
+        "verifier": req.code_verifier,
+        "nonce": req.nonce,
+        "organization": req.organization,
+    }
+    return redirect(req.url)
+
+
+# On the callback:
+stored = session["cbox"]
+try:
+    user = client.authenticate(
+        code=request.args.get("code"),
+        state=request.args.get("state"),
+        error=request.args.get("error"),
+        expected_state=stored["state"],
+        code_verifier=stored["verifier"],
+        nonce=stored["nonce"],
+        organization=stored.get("organization"),
+    )
+except AuthenticationError as exc:
+    if exc.error == "access_denied":
+        ...  # not a member of that organization — send them back to the one they were in
+    raise
+```
+
+Replace your session with the user the callback returns rather than patching the old one:
+`org_role`, `roles` and `permissions` can all differ between organizations.
+
+### Reading the claims
+
+The signed-in user carries them typed:
+
+```python
+user.organization  # ActiveOrganization(id, name, role) or None
+user.organization.role  # OrganizationRole.OWNER / ADMIN / DEVELOPER / MEMBER / VIEWER, or None
+user.roles  # list[str]
+user.permissions  # list[str]
+user.actor  # Actor(sub, actor) or None — see support sessions below
+user.session_id  # the id_token's `sid`, for back-channel logout
+user.has_permission("invoices:create")
+```
+
+The same helpers work on the user and on a claim mapping you verified yourself, such as an
+access token's payload on a resource server:
+
+```python
+from cbox_id import OrganizationRole, has_permission, is_support_session, organization
+
+if not has_permission(payload, "invoices:create"):
+    abort(403)
+
+org = organization(user)
+if org and org.role is OrganizationRole.OWNER:
+    show_billing()
+```
+
+Matching is exact — `invoices:*` does not grant `invoices:delete`. An `org_role` this SDK
+version does not recognise reads as `None`, never as a tier it would have to guess.
+
+### Support sessions
+
+A staff member can act as one of your users for a limited time (at most an hour, no refresh
+token, with a recorded reason). Those tokens carry the RFC 8693 `act` claim naming the
+staff member, and `is_support_session()` reports it:
+
+```python
+if user.is_support_session:  # or is_support_session(payload) on a resource server
+    ...  # show a banner, and refuse password, email and payout changes
+```
+
+It is **fail-closed**: any `act` claim counts, including one whose shape the SDK cannot
+read (`user.actor.sub` is then `None`). A claim it cannot parse is not evidence that nobody
+else is at the keyboard.
+
 ## Hosted profile management
 
 ```python
@@ -140,8 +282,9 @@ client.revoke(user.refresh_token, "refresh_token")  # RFC 7009
 ```
 
 Revoking a refresh token drops the whole token family — that's what "sign out
-everywhere" needs. Both calls are confidential-client, so they require a
-`client_secret`.
+everywhere" needs. Machine tokens and introspection are confidential-client calls and
+require a `client_secret`; revocation also works for a public (PKCE) client, which names
+itself in the request body instead.
 
 ## Declare roles & permissions
 
@@ -160,6 +303,30 @@ manifest = (
 )
 summary = client.publish_manifest(manifest)  # run on deploy
 ```
+
+Two flags decide who may grant what:
+
+```python
+manifest = (
+    AuthzManifest()
+    .permission("support:impersonate", "Act as a customer")
+    .permission("reports:read", "Read reports", tenant_assignable=True)
+    .role(
+        "support",
+        "Support",
+        permissions=["support:impersonate"],
+        tenant_assignable=False,  # a staff role: only your own operators grant it
+    )
+)
+```
+
+- **A role** is assignable by each customer's administrators unless you pass
+  `tenant_assignable=False`, which makes it a staff role only your own operators can grant.
+- **A permission** is internal — reachable only through the roles you declare — unless you
+  pass `tenant_assignable=True`, which lets a customer's administrators grant it on its own.
+
+Both must be real booleans: `"false"` from a config file raises `ConfigurationError`
+rather than publishing a staff role every tenant can hand out.
 
 `publish_manifest` mints a client-credentials token with the `apps.manifest` scope, POSTs
 the manifest to `{issuer}/api/v1/apps/manifest`, and returns the server's sync summary
@@ -185,9 +352,10 @@ via PyJWT, against an explicit allow-list of RS256 and ES256 keyed by JWKS key t
 so `alg:none` and algorithm confusion are both refused. Keep the
 client secret and webhook secrets server-side.
 
-This is a **client**. It authenticates users and calls a Cbox ID instance's standard
-endpoints; it does not configure SSO, run SCIM, or manage organizations — those are
-platform capabilities of [`cboxdk/laravel-id`](https://github.com/cboxdk/laravel-id).
+This is a **client**. It authenticates users — into a chosen organization, when you ask —
+and calls a Cbox ID instance's standard endpoints; it does not configure SSO, run SCIM, or
+administer organizations and their members — those are platform capabilities of
+[`cboxdk/laravel-id`](https://github.com/cboxdk/laravel-id).
 
 Report vulnerabilities via this repo's GitHub **Private Vulnerability Reporting**.
 
