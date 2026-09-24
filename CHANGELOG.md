@@ -3,7 +3,7 @@
 All notable changes to `cbox-id-client` are recorded here. Earlier releases are described
 by their tags and commit history.
 
-## Unreleased
+## [0.9.0] - 2026-09-24
 
 Organization selection, support sessions, and staff roles. Needs a Cbox ID instance that
 understands the `organization` / `organization_hint` authorize parameters, emits
