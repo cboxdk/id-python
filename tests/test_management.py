@@ -16,7 +16,9 @@ import pytest
 from typing_extensions import assert_type
 
 from cbox_id.management import (
+    ACCOUNT_OPERATIONS,
     ENVIRONMENT_OPERATIONS,
+    PLATFORM_OPERATIONS,
     WORKSPACE_OPERATIONS,
     AccountClient,
     ApiResponse,
@@ -643,6 +645,26 @@ def test_names_methods_after_x_action_with_the_specs_method_path_scope_and_dange
         "write",
     )
     assert ENVIRONMENT_OPERATIONS["audit_logs.verify"].scope == "audit_logs:read"
+
+
+def test_every_action_carries_its_scope() -> None:
+    """From ``x-scope``, or the description's "Requires scope" for a hand-written route."""
+    tables = [ENVIRONMENT_OPERATIONS, WORKSPACE_OPERATIONS, PLATFORM_OPERATIONS, ACCOUNT_OPERATIONS]
+    actions = [op for table in tables for op in table.values() if op.action is not None]
+
+    assert actions
+    assert [op.action for op in actions if op.scope is None] == []
+
+    scheme = ENVIRONMENT_OPERATIONS["webhooks.signature_scheme.change"]
+    assert (scheme.method, scheme.path, scheme.scope, scheme.danger) == (
+        "POST",
+        "/webhooks/{id}/signature-scheme",
+        "webhooks:write",
+        "destructive",
+    )
+    links = ENVIRONMENT_OPERATIONS["organizations.portal_links.revoke"]
+    assert links.method == "DELETE"
+    assert links.path_params == ("organization_id", "id")
 
 
 def test_generated_code_is_exactly_what_the_generator_makes_of_the_vendored_specs() -> None:

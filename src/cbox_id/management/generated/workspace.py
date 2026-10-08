@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from typing import Any, Literal, TypeAlias, overload
+from typing import Literal, TypeAlias, overload
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -16,12 +16,17 @@ from ..transport import ManagementTransport
 # ── Schemas (components.schemas) ──────────────────────────────────────────────────────────────────
 
 
+class VerificationResend(TypedDict):
+    outcome: Literal["sent", "already_provisioned"]
+    message: str
+
+
 class Organization(TypedDict):
     id: NotRequired[str]
     name: NotRequired[str]
     status: NotRequired[Literal["active", "suspended"]]
 
-    #: The organization's projects with each one's plan/allowance. Present only for billing-readers (plans are per project).
+    #: The workspace's projects with each one's plan/allowance. Present only for billing-readers (plans are per project).
     projects: NotRequired[list[Project]]
 
 
@@ -181,7 +186,7 @@ class EnvironmentsCreateBody(TypedDict):
     name: str
     type: NotRequired[Literal["production", "sandbox"]]
 
-    #: The project (billing anchor) to create the environment under. Defaults to the organization's first project when omitted.
+    #: The project (billing anchor) to create the environment under. Defaults to the workspace's first project when omitted.
     project_id: NotRequired[str]
 
     #: Mint the environment's first management key in the same call.
@@ -247,9 +252,6 @@ class ProjectsRenameBody(TypedDict):
     name: str
 
 
-ProjectsVerificationResendData: TypeAlias = dict[str, Any]
-
-
 class TeamEnvironmentAccessBody(TypedDict):
     #: True: every environment, including ones created later.
     all_environments: bool
@@ -289,32 +291,32 @@ class WorkspaceSettingsUpdateBody(TypedDict):
 #: Every operation of the Cbox ID — Workspace Management API, keyed by action name.
 WORKSPACE_OPERATIONS: Mapping[str, OperationSpec] = {
     "action_approvals.get": OperationSpec(action=None, operation_id=None, method="GET", path="/workspace/action-approvals/{id}", path_params=("id",), scope=None, danger=None, approval=False, body=False, pagination=None),
-    "environments.create": OperationSpec(action="environments.create", operation_id="environments_create", method="POST", path="/workspace/environments", path_params=(), scope="environments:write", danger="critical", approval=False, body=True, pagination=None),
+    "environments.create": OperationSpec(action="environments.create", operation_id="environments_create", method="POST", path="/workspace/environments", path_params=(), scope="environments:write", danger="critical", approval=True, body=True, pagination=None),
     "environments.domain.remove": OperationSpec(action="environments.domain.remove", operation_id="environments_domain_remove", method="DELETE", path="/workspace/environments/{environment_id}/domain", path_params=("environment_id",), scope="environments:write", danger="destructive", approval=True, body=False, pagination=None),
     "environments.domain.request": OperationSpec(action="environments.domain.request", operation_id="environments_domain_request", method="POST", path="/workspace/environments/{environment_id}/domain", path_params=("environment_id",), scope="environments:write", danger="write", approval=True, body=True, pagination=None),
     "environments.domain.verify": OperationSpec(action="environments.domain.verify", operation_id="environments_domain_verify", method="POST", path="/workspace/environments/{environment_id}/domain/verify", path_params=("environment_id",), scope="environments:write", danger="write", approval=True, body=False, pagination=None),
-    "environments.list": OperationSpec(action="environments.list", operation_id="environments_list", method="GET", path="/workspace/environments", path_params=(), scope="workspace:read", danger=None, approval=False, body=False, pagination="page"),
+    "environments.list": OperationSpec(action="environments.list", operation_id="environments_list", method="GET", path="/workspace/environments", path_params=(), scope="workspace:read", danger=None, approval=True, body=False, pagination="page"),
     "keys.environment.create": OperationSpec(action="keys.environment.create", operation_id="keys_environment_create", method="POST", path="/workspace/environments/{environment_id}/keys", path_params=("environment_id",), scope="keys:write", danger="critical", approval=True, body=True, pagination=None),
     "keys.environment.revoke": OperationSpec(action="keys.environment.revoke", operation_id="keys_environment_revoke", method="DELETE", path="/workspace/environments/{environment_id}/keys/{id}", path_params=("environment_id", "id"), scope="keys:write", danger="destructive", approval=True, body=False, pagination=None),
     "keys.workspace.create": OperationSpec(action="keys.workspace.create", operation_id="keys_workspace_create", method="POST", path="/workspace/keys", path_params=(), scope="keys:write", danger="critical", approval=True, body=True, pagination=None),
     "keys.workspace.list": OperationSpec(action="keys.workspace.list", operation_id="keys_workspace_list", method="GET", path="/workspace/keys", path_params=(), scope="workspace:read", danger="read", approval=True, body=False, pagination="page"),
     "keys.workspace.revoke": OperationSpec(action="keys.workspace.revoke", operation_id="keys_workspace_revoke", method="DELETE", path="/workspace/keys/{id}", path_params=("id",), scope="keys:write", danger="destructive", approval=True, body=False, pagination=None),
-    "projects.create": OperationSpec(action="projects.create", operation_id="projects_create", method="POST", path="/workspace/projects", path_params=(), scope="projects:write", danger=None, approval=False, body=True, pagination=None),
-    "projects.list": OperationSpec(action="projects.list", operation_id="projects_list", method="GET", path="/workspace/projects", path_params=(), scope="workspace:read", danger=None, approval=False, body=False, pagination=None),
+    "projects.create": OperationSpec(action="projects.create", operation_id="projects_create", method="POST", path="/workspace/projects", path_params=(), scope="projects:write", danger=None, approval=True, body=True, pagination=None),
+    "projects.list": OperationSpec(action="projects.list", operation_id="projects_list", method="GET", path="/workspace/projects", path_params=(), scope="workspace:read", danger=None, approval=True, body=False, pagination=None),
     "projects.reactivate": OperationSpec(action="projects.reactivate", operation_id="projects_reactivate", method="POST", path="/workspace/projects/{id}/reactivate", path_params=("id",), scope="projects:write", danger="write", approval=True, body=False, pagination=None),
     "projects.rename": OperationSpec(action="projects.rename", operation_id="projects_rename", method="PATCH", path="/workspace/projects/{id}", path_params=("id",), scope="projects:write", danger="write", approval=True, body=True, pagination=None),
     "projects.suspend": OperationSpec(action="projects.suspend", operation_id="projects_suspend", method="POST", path="/workspace/projects/{id}/suspend", path_params=("id",), scope="projects:write", danger="write", approval=True, body=False, pagination=None),
     "projects.verification.resend": OperationSpec(action="projects.verification.resend", operation_id="projects_verification_resend", method="POST", path="/workspace/projects/verification/resend", path_params=(), scope="projects:write", danger="write", approval=True, body=False, pagination=None),
     "team.environment_access": OperationSpec(action="team.environment_access", operation_id="team_environment_access", method="PUT", path="/workspace/members/{id}/access", path_params=("id",), scope="team:write", danger="write", approval=True, body=True, pagination=None),
-    "team.invitations.list": OperationSpec(action="team.invitations.list", operation_id="team_invitations_list", method="GET", path="/workspace/invitations", path_params=(), scope="team:read", danger=None, approval=False, body=False, pagination=None),
-    "team.invitations.resend": OperationSpec(action="team.invitations.resend", operation_id="team_invitations_resend", method="POST", path="/workspace/invitations/{id}/resend", path_params=("id",), scope="team:write", danger=None, approval=False, body=False, pagination=None),
-    "team.invitations.revoke": OperationSpec(action="team.invitations.revoke", operation_id="team_invitations_revoke", method="DELETE", path="/workspace/invitations/{id}", path_params=("id",), scope="team:write", danger=None, approval=False, body=False, pagination=None),
-    "team.invite": OperationSpec(action="team.invite", operation_id="team_invite", method="POST", path="/workspace/members", path_params=(), scope="team:write", danger=None, approval=False, body=True, pagination=None),
-    "team.list": OperationSpec(action="team.list", operation_id="team_list", method="GET", path="/workspace/members", path_params=(), scope="team:read", danger=None, approval=False, body=False, pagination="page"),
+    "team.invitations.list": OperationSpec(action="team.invitations.list", operation_id="team_invitations_list", method="GET", path="/workspace/invitations", path_params=(), scope="team:read", danger=None, approval=True, body=False, pagination=None),
+    "team.invitations.resend": OperationSpec(action="team.invitations.resend", operation_id="team_invitations_resend", method="POST", path="/workspace/invitations/{id}/resend", path_params=("id",), scope="team:write", danger=None, approval=True, body=False, pagination=None),
+    "team.invitations.revoke": OperationSpec(action="team.invitations.revoke", operation_id="team_invitations_revoke", method="DELETE", path="/workspace/invitations/{id}", path_params=("id",), scope="team:write", danger=None, approval=True, body=False, pagination=None),
+    "team.invite": OperationSpec(action="team.invite", operation_id="team_invite", method="POST", path="/workspace/members", path_params=(), scope="team:write", danger=None, approval=True, body=True, pagination=None),
+    "team.list": OperationSpec(action="team.list", operation_id="team_list", method="GET", path="/workspace/members", path_params=(), scope="team:read", danger=None, approval=True, body=False, pagination="page"),
     "team.remove": OperationSpec(action="team.remove", operation_id="team_remove", method="DELETE", path="/workspace/members/{id}", path_params=("id",), scope="team:write", danger="destructive", approval=True, body=False, pagination=None),
     "team.role": OperationSpec(action="team.role", operation_id="team_role", method="PATCH", path="/workspace/members/{id}/role", path_params=("id",), scope="team:write", danger="write", approval=True, body=True, pagination=None),
     "team.transfer_ownership": OperationSpec(action="team.transfer_ownership", operation_id="team_transfer_ownership", method="POST", path="/workspace/members/{id}/transfer-ownership", path_params=("id",), scope="team:write", danger="critical", approval=True, body=False, pagination=None),
-    "workspace.get": OperationSpec(action="workspace.get", operation_id="workspace_get", method="GET", path="/workspace", path_params=(), scope="workspace:read", danger=None, approval=False, body=False, pagination=None),
+    "workspace.get": OperationSpec(action="workspace.get", operation_id="workspace_get", method="GET", path="/workspace", path_params=(), scope="workspace:read", danger=None, approval=True, body=False, pagination=None),
     "workspace.settings.update": OperationSpec(action="workspace.settings.update", operation_id="workspace_settings_update", method="PATCH", path="/workspace", path_params=(), scope="settings:write", danger="write", approval=True, body=True, pagination=None),
 }
 
@@ -404,7 +406,13 @@ class EnvironmentsMethods:
         self._core = core
         self.domain = EnvironmentsDomainMethods(core)
 
-    def create(self, body: EnvironmentsCreateBody, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[CreatedEnvironment]:
+    @overload
+    def create(self, body: EnvironmentsCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[CreatedEnvironment]: ...
+
+    @overload
+    def create(self, body: EnvironmentsCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[CreatedEnvironment] | PendingApprovalResult[CreatedEnvironment]: ...
+
+    def create(self, body: EnvironmentsCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[CreatedEnvironment] | PendingApprovalResult[CreatedEnvironment]:
         """Create an environment
 
         Requires scope `environments:write` and the `manage-environments` capability
@@ -417,18 +425,26 @@ class EnvironmentsMethods:
 
         ``POST /workspace/environments`` · action ``environments.create``
         Scope ``environments:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["environments.create"], (), body, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["environments.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
-    def list(self, query: EnvironmentsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> ApiResponse[EnvironmentsListData]:
+    @overload
+    def list(self, query: EnvironmentsListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[EnvironmentsListData]: ...
+
+    @overload
+    def list(self, query: EnvironmentsListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[EnvironmentsListData] | PendingApprovalResult[EnvironmentsListData]: ...
+
+    def list(self, query: EnvironmentsListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[EnvironmentsListData] | PendingApprovalResult[EnvironmentsListData]:
         """List environments
 
         Requires scope `workspace:read` (any role).
 
         ``GET /workspace/environments`` · action ``environments.list``
         Scope ``workspace:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["environments.list"], (), query, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["environments.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
 
     def list_all(self, query: EnvironmentsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[Environment]:
         """Every item of ``environments.list``, fetching pages as the iteration reaches them."""
@@ -527,7 +543,7 @@ class KeysWorkspaceMethods:
     def revoke(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
 
     def revoke(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
-        """Revoke a workspace key, and every key it minted; whatever uses them stops immediately.
+        """Revoke a workspace key, and every key it minted on either plane (workspace keys and environment management keys, all the way down); whatever uses them stops immediately.
 
         Requires scope `keys:write` and a role that may `manage-environments` and `manage-members`. Danger: destructive.
 
@@ -554,12 +570,12 @@ class ProjectsVerificationMethods:
         self._core = core
 
     @overload
-    def resend(self, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ProjectsVerificationResendData]: ...
+    def resend(self, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[VerificationResend]: ...
 
     @overload
-    def resend(self, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ProjectsVerificationResendData] | PendingApprovalResult[ProjectsVerificationResendData]: ...
+    def resend(self, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[VerificationResend] | PendingApprovalResult[VerificationResend]: ...
 
-    def resend(self, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ProjectsVerificationResendData] | PendingApprovalResult[ProjectsVerificationResendData]:
+    def resend(self, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[VerificationResend] | PendingApprovalResult[VerificationResend]:
         """Re-send the signup confirmation the workspace's first environment is waiting on, to the owner's address on file.
 
         Requires scope `projects:write` and a role that may `manage-environments`. Danger: write.
@@ -578,25 +594,39 @@ class ProjectsMethods:
         self._core = core
         self.verification = ProjectsVerificationMethods(core)
 
-    def create(self, body: ProjectsCreateBody, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Project]:
+    @overload
+    def create(self, body: ProjectsCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Project]: ...
+
+    @overload
+    def create(self, body: ProjectsCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Project] | PendingApprovalResult[Project]: ...
+
+    def create(self, body: ProjectsCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Project] | PendingApprovalResult[Project]:
         """Create a project
 
         Stand up another independently-billed IdP product. Requires scope `projects:write` and the `manage-environments` capability (owner/admin/developer).
 
         ``POST /workspace/projects`` · action ``projects.create``
         Scope ``projects:write``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["projects.create"], (), body, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["projects.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
-    def list(self, *, headers: Mapping[str, str] | None = None) -> ApiResponse[ProjectsListData]:
+    @overload
+    def list(self, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ProjectsListData]: ...
+
+    @overload
+    def list(self, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ProjectsListData] | PendingApprovalResult[ProjectsListData]: ...
+
+    def list(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ProjectsListData] | PendingApprovalResult[ProjectsListData]:
         """List projects
 
-        Requires scope `workspace:read` (any role). The organization's projects (IdP products). Each carries its own plan and environment allowance.
+        Requires scope `workspace:read` (any role). The workspace's projects (IdP products). Each carries its own plan and environment allowance.
 
         ``GET /workspace/projects`` · action ``projects.list``
         Scope ``workspace:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["projects.list"], (), None, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["projects.list"], (), None, approval=approval, approval_id=approval_id, headers=headers)
 
     @overload
     def reactivate(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Project]: ...
@@ -656,17 +686,30 @@ class TeamInvitationsMethods:
     def __init__(self, core: ManagementTransport) -> None:
         self._core = core
 
-    def list(self, *, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationsListData]:
+    @overload
+    def list(self, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationsListData]: ...
+
+    @overload
+    def list(self, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationsListData] | PendingApprovalResult[TeamInvitationsListData]: ...
+
+    def list(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationsListData] | PendingApprovalResult[TeamInvitationsListData]:
         """List pending invitations
 
         Requires scope `team:read` and the `read-members` capability. The team's invitations nobody has accepted yet, newest first (at most 100).
 
         ``GET /workspace/invitations`` · action ``team.invitations.list``
         Scope ``team:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["team.invitations.list"], (), None, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["team.invitations.list"], (), None, approval=approval, approval_id=approval_id, headers=headers)
 
-    def resend(self, id: str, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member]:
+    @overload
+    def resend(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member]: ...
+
+    @overload
+    def resend(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]: ...
+
+    def resend(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]:
         """Re-send an invitation
 
         Requires scope `team:write` and the `manage-members` capability. Mails a fresh link; the earlier link stops
@@ -675,18 +718,26 @@ class TeamInvitationsMethods:
 
         ``POST /workspace/invitations/{id}/resend`` · action ``team.invitations.resend``
         Scope ``team:write``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["team.invitations.resend"], (id,), None, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["team.invitations.resend"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
-    def revoke(self, id: str, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]:
+    @overload
+    def revoke(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def revoke(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def revoke(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
         """Withdraw an invitation
 
-        Requires scope `team:write` and the `manage-members` capability. The link stops working. An invitation that is not pending on this organization is a `404`.
+        Requires scope `team:write` and the `manage-members` capability. The link stops working. An invitation that is not pending in this workspace is a `404`.
 
         ``DELETE /workspace/invitations/{id}`` · action ``team.invitations.revoke``
         Scope ``team:write``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["team.invitations.revoke"], (id,), None, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["team.invitations.revoke"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
 class TeamMethods:
@@ -713,11 +764,17 @@ class TeamMethods:
         """
         return self._core.call(WORKSPACE_OPERATIONS["team.environment_access"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
-    def invite(self, body: TeamInviteBody, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member]:
+    @overload
+    def invite(self, body: TeamInviteBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member]: ...
+
+    @overload
+    def invite(self, body: TeamInviteBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]: ...
+
+    def invite(self, body: TeamInviteBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]:
         """Invite a member
 
         Requires scope `team:write` and the `manage-members` capability (owner/admin). Invites the address onto the
-        organization's team — the same invitation the console's Team page sends: a mail naming
+        workspace's team — the same invitation the console's Team page sends: a mail naming
         this key as the inviter and the role, with a signed link on which the invitee sets a
         password and is signed in. Owner is never invited; ownership is transferred. An
         earlier pending invitation for the same address is superseded. List, re-send and
@@ -725,18 +782,26 @@ class TeamMethods:
 
         ``POST /workspace/members`` · action ``team.invite``
         Scope ``team:write``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["team.invite"], (), body, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["team.invite"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
-    def list(self, query: TeamListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamListData]:
+    @overload
+    def list(self, query: TeamListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamListData]: ...
+
+    @overload
+    def list(self, query: TeamListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamListData] | PendingApprovalResult[TeamListData]: ...
+
+    def list(self, query: TeamListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamListData] | PendingApprovalResult[TeamListData]:
         """List members
 
         Requires scope `team:read` and the `read-members` capability (owner/admin/viewer). The roster is PII — a developer key is refused.
 
         ``GET /workspace/members`` · action ``team.list``
         Scope ``team:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["team.list"], (), query, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["team.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
 
     def list_all(self, query: TeamListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[Member]:
         """Every item of ``team.list``, fetching pages as the iteration reaches them."""
@@ -825,15 +890,22 @@ class WorkspaceMethods:
         self._core = core
         self.settings = WorkspaceSettingsMethods(core)
 
-    def get(self, *, headers: Mapping[str, str] | None = None) -> ApiResponse[Organization]:
-        """Get the organization
+    @overload
+    def get(self, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Organization]: ...
 
-        Requires scope `workspace:read` (any role). Returns the organization's identity. The `projects` block (each project's plan/allowance) is included only for keys whose role can read billing (owner/admin/viewer — not developer).
+    @overload
+    def get(self, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Organization] | PendingApprovalResult[Organization]: ...
+
+    def get(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Organization] | PendingApprovalResult[Organization]:
+        """Get the workspace
+
+        Requires scope `workspace:read` (any role). Returns the workspace's identity. The `projects` block (each project's plan/allowance) is included only for keys whose role can read billing (owner/admin/viewer — not developer).
 
         ``GET /workspace`` · action ``workspace.get``
         Scope ``workspace:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["workspace.get"], (), None, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["workspace.get"], (), None, approval=approval, approval_id=approval_id, headers=headers)
 
 
 # ── Client ────────────────────────────────────────────────────────────────────────────────────────
@@ -842,7 +914,7 @@ class WorkspaceMethods:
 class WorkspaceClient(ManagementClient):
     """Cbox ID — Workspace Management API.
 
-    The **global organization-management plane** — above every environment. Manage the
+    The **workspace plane** — the customer's own Cbox account, above every environment it owns. Manage the
     workspace, its **projects** (IdP products, each a billing anchor) and their
     environments, its team, and its keys with a workspace key.
 

@@ -16,6 +16,69 @@ from ..transport import ManagementTransport
 # ── Schemas (components.schemas) ──────────────────────────────────────────────────────────────────
 
 
+class ManagementKeyRequireApprovalOption1(TypedDict):
+    min_danger: NotRequired[Literal["read", "write", "destructive", "critical"] | None]
+    actions: NotRequired[list[str]]
+
+
+class ManagementKeyCreatedByOption1(TypedDict):
+    type: str
+    id: str | None
+
+
+class ManagementKey(TypedDict):
+    """A management key of this environment. `token` is present once, on the answer that minted it, and never again."""
+
+    id: str
+    name: str
+    description: NotRequired[str | None]
+
+    #: The key's first characters, to recognise it by.
+    prefix: str
+    scopes: list[str]
+    active: bool
+
+    #: The key that minted this one, if a key did.
+    parent_key_id: NotRequired[str | None]
+
+    #: The key this one replaced, if it came from a rotation.
+    rotated_from_id: NotRequired[str | None]
+
+    #: The approval policy: actions held for the person behind the key.
+    require_approval: NotRequired[ManagementKeyRequireApprovalOption1 | None]
+    created_by: NotRequired[ManagementKeyCreatedByOption1 | None]
+    expires_at: NotRequired[str | None]
+    last_used_at: NotRequired[str | None]
+    revoked_at: NotRequired[str | None]
+    created_at: str | None
+
+    #: The key's value. Only on the answer that minted it; null on an idempotent replay of that answer, because the value is never stored.
+    token: NotRequired[str | None]
+
+
+class LegacyLoginProbe(TypedDict):
+    #: What the declared legacy-login endpoint answered for the address, in words.
+    result: str
+
+
+class ManifestSync(TypedDict):
+    #: The manifest matched what is already stored.
+    unchanged: bool
+    roles_declared: int
+    permissions_declared: int
+
+    #: Roles stored here that the manifest no longer declares.
+    orphaned_role_keys: list[str]
+    orphaned_permission_keys: list[str]
+
+
+class SelfServiceSignup(TypedDict):
+    enabled: bool
+
+    #: False on a single-tenant install, where sign-up follows CBOX_ID_SIGNUP_MODE and the switch changes nothing.
+    decided_here: bool
+
+
 class Device(TypedDict):
     id: str
     install_id: str
@@ -283,12 +346,20 @@ class Webhook(TypedDict):
 
     #: false while paused.
     active: bool
+
+    #: How deliveries are signed. `cbox`: `X-Cbox-Timestamp` and
+    #: `X-Cbox-Signature: t=<ts>,v1=<hex HMAC-SHA256 of "<ts>.<body>">`.
+    #: `standard_webhooks`: `webhook-id`, `webhook-timestamp` and
+    #: `webhook-signature: v1,<base64 HMAC-SHA256 of "<id>.<ts>.<body>">`, verifiable
+    #: with any Standard Webhooks library. Only the chosen scheme's headers are sent.
+    signature_scheme: Literal["cbox", "standard_webhooks"]
     consecutive_failures: NotRequired[int]
     last_success_at: NotRequired[str | None]
     created_at: NotRequired[str | None]
 
     #: The signing secret, on the create and rotate answers only — shown once, never
-    #: retrievable again. `null` on an idempotent replay of that answer.
+    #: retrievable again. `null` on an idempotent replay of that answer. 64 hex
+    #: characters under `cbox`; a `whsec_` secret under `standard_webhooks`.
     secret: NotRequired[str | None]
 
 
@@ -306,21 +377,61 @@ class InlineHook(TypedDict):
     secret: NotRequired[str | None]
 
 
+class LogStreamOptions(TypedDict):
+    """Datadog, S3 and GCS: the destination's settings, as stored. Never a credential — the API key, secret access key or service-account key is the encrypted secret. null for an HTTP collector."""
+
+    site: NotRequired[Literal["datadoghq.com", "us3.datadoghq.com", "us5.datadoghq.com", "datadoghq.eu", "ap1.datadoghq.com", "ap2.datadoghq.com", "ddog-gov.com"]]
+    service: NotRequired[str]
+    source: NotRequired[str]
+    hostname: NotRequired[str]
+
+    #: Comma-separated `key:value` tags (`ddtags`).
+    tags: NotRequired[str]
+    bucket: NotRequired[str]
+    region: NotRequired[str]
+    prefix: NotRequired[str]
+    access_key_id: NotRequired[str]
+    role_arn: NotRequired[str]
+    external_id: NotRequired[str]
+    sse: NotRequired[Literal["AES256", "aws:kms"]]
+    kms_key_id: NotRequired[str]
+    path_style: NotRequired[bool]
+    gzip: NotRequired[bool]
+
+
 class LogStream(TypedDict):
     id: str
     name: str
-    destination: Literal["splunk_hec", "elastic_ecs", "graylog_gelf", "cef_http", "generic_json"]
+    destination: Literal["splunk_hec", "elastic_ecs", "graylog_gelf", "cef_http", "generic_json", "datadog", "s3", "gcs"]
+
+    #: Where entries go. For Datadog, S3 and GCS, derived from the site or region unless a custom endpoint was given.
     endpoint_url: str
+
+    #: An HTTP collector's scheme; `none` for the cloud destinations, which authenticate their own way.
     auth: Literal["none", "bearer", "splunk", "hmac"]
+
+    #: Datadog, S3 and GCS: the destination's settings, as stored. Never a credential — the API key, secret access key or service-account key is the encrypted secret. null for an HTTP collector.
+    options: LogStreamOptions | None
+
+    #: An assumed-role S3 stream's external ID, generated for it: the role's trust policy must require it (`sts:ExternalId`). null otherwise.
+    external_id: str | None
 
     #: null when the environment owns it: it carries EVERY organization's entries.
     organization_id: str | None
     enabled: bool
+
+    #: `degraded`: recent transient failures, still retrying. `paused`: the circuit is open after repeated failures and resumes on its own. `action_required`: the destination refused the credential or the settings — update the stream, or run a successful test.
+    health: Literal["healthy", "degraded", "paused", "action_required"]
     consecutive_failures: NotRequired[int]
     last_success_at: NotRequired[str | None]
+
+    #: The latest failure, scrubbed of the stream's secret.
+    last_error: NotRequired[str | None]
+    last_failure_kind: NotRequired[Literal["transient", "authentication", "configuration"] | None]
+    last_failure_at: NotRequired[str | None]
     created_at: NotRequired[str | None]
 
-    #: A generated HMAC key, on the create answer only — shown once. `null` on an idempotent replay.
+    #: A generated HMAC key, on the answer that generated it only — shown once. `null` on an idempotent replay. A credential the caller supplied is never echoed.
     secret: NotRequired[str | None]
 
 
@@ -685,10 +796,13 @@ class SsoConnectionConfig(TypedDict):
 
 
 class SsoConnectionServiceProvider(TypedDict):
-    """What to paste into the identity provider: this connection's own entity id and ACS URL (SAML), or its redirect URI (OIDC). null for a social sign-in connection."""
+    """What to paste into the identity provider: this connection's own entity id, ACS URL and SP metadata URL (SAML), or its redirect URI (OIDC). null for a social sign-in connection."""
 
     sp_entity_id: NotRequired[str]
     sp_acs_url: NotRequired[str]
+
+    #: SAML: this connection's service-provider metadata (entity id and ACS URL as one XML document), for an identity provider that imports SP metadata. Served for a draft too, before the identity provider's half is known.
+    sp_metadata_url: NotRequired[str]
     redirect_uri: NotRequired[str]
 
 
@@ -713,7 +827,7 @@ class SsoConnection(TypedDict):
     #: The settings that are not secrets.
     config: SsoConnectionConfig
 
-    #: What to paste into the identity provider: this connection's own entity id and ACS URL (SAML), or its redirect URI (OIDC). null for a social sign-in connection.
+    #: What to paste into the identity provider: this connection's own entity id, ACS URL and SP metadata URL (SAML), or its redirect URI (OIDC). null for a social sign-in connection.
     service_provider: NotRequired[SsoConnectionServiceProvider | None]
     created_at: NotRequired[str | None]
     updated_at: NotRequired[str | None]
@@ -757,8 +871,11 @@ class SsoCertificates(TypedDict):
 class LogStreamTest(TypedDict):
     id: str
 
-    #: Whether the destination accepted the test entry.
+    #: Whether the destination accepted the test event (action `siem.stream.test`).
     delivered: bool
+
+    #: Why not: `transient` (unreachable, busy — retrying can help) or `authentication` / `configuration` (somebody has to fix the stream). null when delivered.
+    failure: Literal["transient", "authentication", "configuration"] | None
 
     #: The destination's refusal, scrubbed of the stream's secret.
     error: str | None
@@ -809,6 +926,40 @@ class PortalLink(TypedDict):
     #: idempotent replay of this answer.
     url: str | None
     expires_at: str | None
+
+
+class PortalLinkRecord(TypedDict):
+    """An Admin Portal link as a list shows it. Never its URL: that was shown once, when it was minted, and only its hash is kept."""
+
+    id: str
+    organization_id: str
+
+    #: What the link may set up.
+    intents: list[Literal["sso", "dsync", "domain_verification", "log_streams", "certificate_renewal", "audit_logs"]]
+
+    #: `pending`: not opened yet, and it still can be. `in_use`: opened, and the setup
+    #: session it started may still be running. `completed`: its setup was finished.
+    #: `expired`: never opened in time, or its setup session ran out. `revoked`: withdrawn.
+    status: Literal["pending", "in_use", "completed", "expired", "revoked"]
+    created_at: str | None
+
+    #: Who minted it: the console person's id, or the management key's.
+    created_by: str
+
+    #: The address it was mailed to, or null when it was not sent.
+    emailed_to: str | None
+
+    #: How long it could wait to be opened.
+    expires_at: str | None
+
+    #: When it was opened. It is single-use.
+    consumed_at: str | None
+
+    #: When its setup was finished.
+    completed_at: str | None
+
+    #: When it was withdrawn.
+    revoked_at: str | None
 
 
 class AuditLogEventActor(TypedDict):
@@ -1296,9 +1447,6 @@ AppsListData: TypeAlias = 'list[App]'
 class AppsManifestSetBody(TypedDict):
     #: An absolute URL; null or left out clears it.
     manifest_url: NotRequired[str | None]
-
-
-AppsManifestSyncData: TypeAlias = dict[str, Any]
 
 
 class AppsScopesSetBody(TypedDict):
@@ -1865,9 +2013,6 @@ class KeysCreateBody(TypedDict):
     require_approval: NotRequired[KeysCreateBodyRequireApproval]
 
 
-KeysCreateData: TypeAlias = dict[str, Any]
-
-
 class KeysListQuery(TypedDict):
     #: Items per page, 1–100. Default 50.
     limit: NotRequired[int]
@@ -1876,10 +2021,7 @@ class KeysListQuery(TypedDict):
     after: NotRequired[str]
 
 
-KeysListItem: TypeAlias = dict[str, Any]
-
-
-KeysListData: TypeAlias = list[dict[str, Any]]
+KeysListData: TypeAlias = 'list[ManagementKey]'
 
 
 class KeysRotateBody(TypedDict):
@@ -1887,29 +2029,73 @@ class KeysRotateBody(TypedDict):
     grace_hours: NotRequired[int]
 
 
-KeysRotateData: TypeAlias = dict[str, Any]
-
-
 class LegacyLoginProbeBody(TypedDict):
     #: An address that exists in your old system — your own.
     email: str
 
 
-LegacyLoginProbeData: TypeAlias = dict[str, Any]
+class LogStreamsCreateBodyOptions(TypedDict):
+    """Datadog, S3 and GCS only: the destination's settings. An HTTP collector takes none."""
+
+
+    #: Datadog: the site your account lives on — the domain you sign in at, e.g. `datadoghq.eu` for EU1. Default `datadoghq.com` (US1). An API key only works on its own site.
+    site: NotRequired[Literal["datadoghq.com", "us3.datadoghq.com", "us5.datadoghq.com", "datadoghq.eu", "ap1.datadoghq.com", "ap2.datadoghq.com", "ddog-gov.com"] | None]
+
+    #: Datadog: the `service` attribute on every entry. Default: this platform's name.
+    service: NotRequired[str | None]
+
+    #: Datadog: the `ddsource` attribute. Default `cbox`.
+    source: NotRequired[str | None]
+
+    #: Datadog: `key:value` tags (`ddtags`) on every entry, e.g. `env:prod`.
+    tags: NotRequired[list[str] | None]
+
+    #: Datadog: the `hostname` attribute. Default: this platform's host.
+    hostname: NotRequired[str | None]
+
+    #: S3 and GCS: the bucket objects are written to.
+    bucket: NotRequired[str | None]
+
+    #: S3: the bucket's AWS Region, e.g. `eu-west-1` (`auto` for Cloudflare R2).
+    region: NotRequired[str | None]
+
+    #: S3 and GCS: the object key prefix, e.g. `cbox/audit`. Objects are written to `{prefix}/{yyyy}/{mm}/{dd}/{hh}/{batch}.ndjson.gz`.
+    prefix: NotRequired[str | None]
+
+    #: S3 with an access key: the IAM access key ID. Its secret access key is the stream's `secret`.
+    access_key_id: NotRequired[str | None]
+
+    #: S3 with an assumed role: the IAM role the platform assumes. No secret is stored; the role's trust policy must require the stream's `external_id`.
+    role_arn: NotRequired[str | None]
+
+    #: S3: server-side encryption requested on every object. Left out, the bucket's default.
+    sse: NotRequired[Literal["AES256", "aws:kms"] | None]
+
+    #: S3 with `aws:kms`: the KMS key ID, alias or ARN.
+    kms_key_id: NotRequired[str | None]
+
+    #: S3: path-style addressing. Default: virtual-hosted on AWS, path-style on a custom endpoint (MinIO, R2).
+    path_style: NotRequired[bool | None]
+
+    #: S3 and GCS: gzip each object (`.ndjson.gz`). Default true.
+    gzip: NotRequired[bool | None]
 
 
 class LogStreamsCreateBody(TypedDict):
     name: str
-    destination: Literal["splunk_hec", "elastic_ecs", "graylog_gelf", "cef_http", "generic_json"]
+    destination: Literal["splunk_hec", "elastic_ecs", "graylog_gelf", "cef_http", "generic_json", "datadog", "s3", "gcs"]
 
-    #: A public URL the entries are POSTed to.
-    endpoint_url: str
+    #: An HTTP collector: the public URL entries are POSTed to (required). Datadog, S3 and GCS: leave out for the destination's own endpoint, or an https URL of an S3-compatible store (MinIO, R2).
+    endpoint_url: NotRequired[str | None]
 
-    #: How the endpoint is authenticated. Left out, the destination's default.
+    #: An HTTP collector: how the endpoint is authenticated. Left out, the destination's default. The cloud destinations authenticate their own way.
     auth: NotRequired[Literal["none", "bearer", "splunk", "hmac"]]
 
-    #: The bearer or Splunk token the endpoint expects. Left out with `hmac`, a key is generated and returned once.
+    #: The credential, never echoed: the bearer or Splunk token (HTTP collectors; left out with `hmac`, a key is generated and returned once), the Datadog API key, the S3 secret access key (none with `role_arn`), or the GCS service-account JSON key.
     secret: NotRequired[str | None]
+
+    #: Datadog, S3 and GCS only: the destination's settings. An HTTP collector takes none.
+    options: NotRequired[LogStreamsCreateBodyOptions]
 
     #: The organization it belongs to; it carries that organization's traffic only. Send this or environment_wide.
     organization_id: NotRequired[str | None]
@@ -1929,9 +2115,73 @@ class LogStreamsListQuery(TypedDict):
 LogStreamsListData: TypeAlias = 'list[LogStream]'
 
 
+class LogStreamsUpdateBodyOptions(TypedDict):
+    """Datadog, S3 and GCS only: the destination's settings. An HTTP collector takes none."""
+
+
+    #: Datadog: the site your account lives on — the domain you sign in at, e.g. `datadoghq.eu` for EU1. Default `datadoghq.com` (US1). An API key only works on its own site.
+    site: NotRequired[Literal["datadoghq.com", "us3.datadoghq.com", "us5.datadoghq.com", "datadoghq.eu", "ap1.datadoghq.com", "ap2.datadoghq.com", "ddog-gov.com"] | None]
+
+    #: Datadog: the `service` attribute on every entry. Default: this platform's name.
+    service: NotRequired[str | None]
+
+    #: Datadog: the `ddsource` attribute. Default `cbox`.
+    source: NotRequired[str | None]
+
+    #: Datadog: `key:value` tags (`ddtags`) on every entry, e.g. `env:prod`.
+    tags: NotRequired[list[str] | None]
+
+    #: Datadog: the `hostname` attribute. Default: this platform's host.
+    hostname: NotRequired[str | None]
+
+    #: S3 and GCS: the bucket objects are written to.
+    bucket: NotRequired[str | None]
+
+    #: S3: the bucket's AWS Region, e.g. `eu-west-1` (`auto` for Cloudflare R2).
+    region: NotRequired[str | None]
+
+    #: S3 and GCS: the object key prefix, e.g. `cbox/audit`. Objects are written to `{prefix}/{yyyy}/{mm}/{dd}/{hh}/{batch}.ndjson.gz`.
+    prefix: NotRequired[str | None]
+
+    #: S3 with an access key: the IAM access key ID. Its secret access key is the stream's `secret`.
+    access_key_id: NotRequired[str | None]
+
+    #: S3 with an assumed role: the IAM role the platform assumes. No secret is stored; the role's trust policy must require the stream's `external_id`.
+    role_arn: NotRequired[str | None]
+
+    #: S3: server-side encryption requested on every object. Left out, the bucket's default.
+    sse: NotRequired[Literal["AES256", "aws:kms"] | None]
+
+    #: S3 with `aws:kms`: the KMS key ID, alias or ARN.
+    kms_key_id: NotRequired[str | None]
+
+    #: S3: path-style addressing. Default: virtual-hosted on AWS, path-style on a custom endpoint (MinIO, R2).
+    path_style: NotRequired[bool | None]
+
+    #: S3 and GCS: gzip each object (`.ndjson.gz`). Default true.
+    gzip: NotRequired[bool | None]
+
+
 class LogStreamsUpdateBody(TypedDict):
+    name: NotRequired[str]
+
+    #: Changing it starts the stream's options and credential afresh.
+    destination: NotRequired[Literal["splunk_hec", "elastic_ecs", "graylog_gelf", "cef_http", "generic_json", "datadog", "s3", "gcs"]]
+
+    #: An HTTP collector's URL; for Datadog, S3 and GCS empty means the destination's own endpoint.
+    endpoint_url: NotRequired[str | None]
+
+    #: An HTTP collector only.
+    auth: NotRequired[Literal["none", "bearer", "splunk", "hmac"]]
+
+    #: A new credential (token, API key, secret access key or service-account JSON key). Left out, the current one is kept. Never echoed.
+    secret: NotRequired[str | None]
+
+    #: Datadog, S3 and GCS only: the destination's settings. An HTTP collector takes none.
+    options: NotRequired[LogStreamsUpdateBodyOptions]
+
     #: True to deliver; false to stop, keeping what is pending.
-    enabled: bool
+    enabled: NotRequired[bool]
 
 
 class MembersAddBody(TypedDict):
@@ -2035,6 +2285,9 @@ class OrganizationsPortalLinksCreateBody(TypedDict):
 
     #: The language of that mail. Left out, the environment's default language.
     locale: NotRequired[Literal["en", "da", "de", "sv", "nb", "fr"] | None]
+
+
+OrganizationsPortalLinksListData: TypeAlias = 'list[PortalLinkRecord]'
 
 
 class OrganizationsTransferOwnershipBody(TypedDict):
@@ -2298,9 +2551,6 @@ class SigninSelfServiceSignupSetBody(TypedDict):
     enabled: bool
 
 
-SigninSelfServiceSignupSetData: TypeAlias = dict[str, Any]
-
-
 class SigninSocialDeleteBody(TypedDict):
     #: Only remove it if it is this organization's.
     organization_id: NotRequired[str | None]
@@ -2350,7 +2600,7 @@ class SigninSocialSetBody(TypedDict):
     #: The organization whose sign-in page offers it.
     organization_id: str
 
-    #: The catalogue key: google, microsoft, okta, auth0, keycloak, gitlab, slack, github, discord, apple, facebook.
+    #: The catalogue key: google, microsoft, okta, auth0, keycloak, gitlab, slack, github, discord, apple, facebook, linkedin, bitbucket, xero, intuit.
     provider: str
 
     #: The client id from your own account with the provider. For Apple, the Services ID.
@@ -2481,7 +2731,7 @@ class SsoConnectionsCreateBody(TypedDict):
     #: OIDC: the client secret. Write-only.
     client_secret: NotRequired[str | None]
 
-    #: OIDC: the signing key. Write-only.
+    #: OIDC, optional: the provider's ID-token signing key (an RS256 public key, PEM). Leave it out for any provider whose discovery document publishes a jwks_uri — the keys are read from there and follow its rotations. Needed only when it does not. Write-only.
     signing_key: NotRequired[str | None]
 
 
@@ -2550,7 +2800,7 @@ class SsoConnectionsUpdateBody(TypedDict):
     #: OIDC: the client secret. Write-only.
     client_secret: NotRequired[str | None]
 
-    #: OIDC: the signing key. Write-only.
+    #: OIDC, optional: the provider's ID-token signing key (an RS256 public key, PEM). Leave it out for any provider whose discovery document publishes a jwks_uri — the keys are read from there and follow its rotations. Needed only when it does not. Write-only.
     signing_key: NotRequired[str | None]
 
 
@@ -2761,6 +3011,9 @@ class WebhooksCreateBody(TypedDict):
     #: The events it receives.
     event_types: list[Literal["user.created", "user.updated", "user.deactivated", "user.login", "user.reactivated", "identity.linked", "user.erased", "organization.created", "organization.suspended", "organization.reactivated", "organization.updated", "organization.deleted", "membership.created", "membership.updated", "membership.deleted", "invitation.created", "invitation.accepted", "invitation.revoked", "role.assigned", "role.unassigned", "role.assigned_everywhere", "role.unassigned_everywhere", "api_key.created", "api_key.revoked", "support_session.started", "directory.user.provisioned", "directory.user.deprovisioned", "directory.user.deactivated", "directory.group.membership_changed", "domain.added", "domain.removed", "domain.verified", "connection.activated", "connection.certificate_expiring", "entitlement.set", "entitlement.updated", "entitlement.revoked", "vault.grant.created", "vault.grant.revoked", "vault.secret.revoked", "governance.access.revoked"]]
 
+    #: How deliveries are signed: `cbox` (X-Cbox-Signature, the default) or `standard_webhooks` (webhook-id / webhook-timestamp / webhook-signature, verifiable with any Standard Webhooks library; the secret is a `whsec_` secret).
+    signature_scheme: NotRequired[Literal["cbox", "standard_webhooks"]]
+
     #: The organization it belongs to; it carries that organization's traffic only. Send this or environment_wide.
     organization_id: NotRequired[str | None]
 
@@ -2777,6 +3030,11 @@ class WebhooksListQuery(TypedDict):
 
 
 WebhooksListData: TypeAlias = 'list[Webhook]'
+
+
+class WebhooksSignatureSchemeChangeBody(TypedDict):
+    #: The scheme deliveries are signed with from the next attempt. The secret is unchanged: under `standard_webhooks` a 64-hex secret is used as `whsec_` + base64 of the hex string. Update the receiver before you switch.
+    signature_scheme: Literal["cbox", "standard_webhooks"]
 
 
 class WebhooksUpdateBody(TypedDict):
@@ -2801,25 +3059,25 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "action_approvals.get": OperationSpec(action=None, operation_id=None, method="GET", path="/action-approvals/{id}", path_params=("id",), scope=None, danger=None, approval=False, body=False, pagination=None),
     "api_keys.list": OperationSpec(action="api_keys.list", operation_id="api_keys_list", method="GET", path="/organizations/{organization_id}/api-keys", path_params=("organization_id",), scope="api_keys:read", danger=None, approval=True, body=False, pagination="cursor"),
     "api_keys.revoke": OperationSpec(action="api_keys.revoke", operation_id="api_keys_revoke", method="DELETE", path="/api-keys/{id}", path_params=("id",), scope="api_keys:write", danger=None, approval=True, body=False, pagination=None),
-    "apis.create": OperationSpec(action=None, operation_id=None, method="POST", path="/apis", path_params=(), scope="apis:write", danger=None, approval=False, body=True, pagination=None),
-    "apis.delete": OperationSpec(action=None, operation_id=None, method="DELETE", path="/apis/{id}", path_params=("id",), scope="apis:write", danger=None, approval=False, body=False, pagination=None),
-    "apis.get": OperationSpec(action=None, operation_id=None, method="GET", path="/apis/{id}", path_params=("id",), scope="apis:read", danger=None, approval=False, body=False, pagination=None),
-    "apis.list": OperationSpec(action=None, operation_id=None, method="GET", path="/apis", path_params=(), scope="apis:read", danger=None, approval=False, body=False, pagination="cursor"),
+    "apis.create": OperationSpec(action=None, operation_id=None, method="POST", path="/apis", path_params=(), scope="apis:write", danger=None, approval=True, body=True, pagination=None),
+    "apis.delete": OperationSpec(action=None, operation_id=None, method="DELETE", path="/apis/{id}", path_params=("id",), scope="apis:write", danger=None, approval=True, body=False, pagination=None),
+    "apis.get": OperationSpec(action=None, operation_id=None, method="GET", path="/apis/{id}", path_params=("id",), scope="apis:read", danger=None, approval=True, body=False, pagination=None),
+    "apis.list": OperationSpec(action=None, operation_id=None, method="GET", path="/apis", path_params=(), scope="apis:read", danger=None, approval=True, body=False, pagination="cursor"),
     "apis.scopes.define": OperationSpec(action="apis.scopes.define", operation_id="apis_scopes_define", method="PUT", path="/apis/{id}/scopes/{key}", path_params=("id", "key"), scope="apis:write", danger="write", approval=True, body=True, pagination=None),
     "apis.scopes.remove": OperationSpec(action="apis.scopes.remove", operation_id="apis_scopes_remove", method="DELETE", path="/apis/{id}/scopes/{key}", path_params=("id", "key"), scope="apis:write", danger="destructive", approval=True, body=False, pagination=None),
-    "apis.update": OperationSpec(action=None, operation_id=None, method="PATCH", path="/apis/{id}", path_params=("id",), scope="apis:write", danger=None, approval=False, body=True, pagination=None),
+    "apis.update": OperationSpec(action=None, operation_id=None, method="PATCH", path="/apis/{id}", path_params=("id",), scope="apis:write", danger=None, approval=True, body=True, pagination=None),
     "approvals.deny": OperationSpec(action="approvals.deny", operation_id="approvals_deny", method="POST", path="/agent-requests/{request_id}/deny", path_params=("request_id",), scope="approvals:write", danger="destructive", approval=True, body=False, pagination=None),
     "approvals.list": OperationSpec(action="approvals.list", operation_id="approvals_list", method="GET", path="/agent-requests", path_params=(), scope="approvals:read", danger="read", approval=True, body=False, pagination="cursor"),
-    "apps.blueprint": OperationSpec(action="apps.blueprint", operation_id="apps_blueprint", method="GET", path="/apps/{id}/blueprint", path_params=("id",), scope="apps:read", danger=None, approval=False, body=False, pagination=None),
+    "apps.blueprint": OperationSpec(action="apps.blueprint", operation_id="apps_blueprint", method="GET", path="/apps/{id}/blueprint", path_params=("id",), scope="apps:read", danger=None, approval=True, body=False, pagination=None),
     "apps.copy": OperationSpec(action="apps.copy", operation_id="apps_copy", method="POST", path="/apps/{id}/copy", path_params=("id",), scope="apps:write", danger="critical", approval=True, body=True, pagination=None),
-    "apps.create": OperationSpec(action="apps.create", operation_id="apps_create", method="POST", path="/apps", path_params=(), scope="apps:write", danger="critical", approval=False, body=True, pagination=None),
+    "apps.create": OperationSpec(action="apps.create", operation_id="apps_create", method="POST", path="/apps", path_params=(), scope="apps:write", danger="critical", approval=True, body=True, pagination=None),
     "apps.delete": OperationSpec(action="apps.delete", operation_id="apps_delete", method="DELETE", path="/apps/{id}", path_params=("id",), scope="apps:write", danger="critical", approval=True, body=False, pagination=None),
     "apps.get": OperationSpec(action="apps.get", operation_id="apps_get", method="GET", path="/apps/{id}", path_params=("id",), scope="apps:read", danger="read", approval=True, body=False, pagination=None),
-    "apps.list": OperationSpec(action="apps.list", operation_id="apps_list", method="GET", path="/apps", path_params=(), scope="apps:read", danger=None, approval=False, body=False, pagination="cursor"),
+    "apps.list": OperationSpec(action="apps.list", operation_id="apps_list", method="GET", path="/apps", path_params=(), scope="apps:read", danger=None, approval=True, body=False, pagination="cursor"),
     "apps.manifest.set": OperationSpec(action="apps.manifest.set", operation_id="apps_manifest_set", method="PUT", path="/apps/{id}/manifest", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
     "apps.manifest.sync": OperationSpec(action="apps.manifest.sync", operation_id="apps_manifest_sync", method="POST", path="/apps/{id}/manifest/sync", path_params=("id",), scope="apps:write", danger="write", approval=True, body=False, pagination=None),
     "apps.scopes.set": OperationSpec(action="apps.scopes.set", operation_id="apps_scopes_set", method="PUT", path="/apps/{id}/scopes", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
-    "apps.secrets.list": OperationSpec(action="apps.secrets.list", operation_id="apps_secrets_list", method="GET", path="/apps/{id}/secrets", path_params=("id",), scope="apps:read", danger=None, approval=False, body=False, pagination=None),
+    "apps.secrets.list": OperationSpec(action="apps.secrets.list", operation_id="apps_secrets_list", method="GET", path="/apps/{id}/secrets", path_params=("id",), scope="apps:read", danger=None, approval=True, body=False, pagination=None),
     "apps.secrets.revoke": OperationSpec(action="apps.secrets.revoke", operation_id="apps_secrets_revoke", method="DELETE", path="/apps/{id}/secrets/{secret_id}", path_params=("id", "secret_id"), scope="apps:write", danger="critical", approval=True, body=False, pagination=None),
     "apps.secrets.rotate": OperationSpec(action="apps.secrets.rotate", operation_id="apps_secrets_rotate", method="POST", path="/apps/{id}/secrets", path_params=("id",), scope="apps:write", danger="critical", approval=True, body=True, pagination=None),
     "apps.settings.api_key_prefix": OperationSpec(action="apps.settings.api_key_prefix", operation_id="apps_settings_api_key_prefix", method="PUT", path="/apps/{id}/settings/api-key-prefix", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
@@ -2903,6 +3161,8 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "organizations.get": OperationSpec(action="organizations.get", operation_id="organizations_get", method="GET", path="/organizations/{id}", path_params=("id",), scope="organizations:read", danger=None, approval=True, body=False, pagination=None),
     "organizations.list": OperationSpec(action="organizations.list", operation_id="organizations_list", method="GET", path="/organizations", path_params=(), scope="organizations:read", danger=None, approval=True, body=False, pagination="cursor"),
     "organizations.portal_links.create": OperationSpec(action="organizations.portal_links.create", operation_id="organizations_portal_links_create", method="POST", path="/organizations/{organization_id}/portal-links", path_params=("organization_id",), scope="portal_links:write", danger="critical", approval=True, body=True, pagination=None),
+    "organizations.portal_links.list": OperationSpec(action="organizations.portal_links.list", operation_id="organizations_portal_links_list", method="GET", path="/organizations/{organization_id}/portal-links", path_params=("organization_id",), scope="portal_links:read", danger="read", approval=True, body=False, pagination=None),
+    "organizations.portal_links.revoke": OperationSpec(action="organizations.portal_links.revoke", operation_id="organizations_portal_links_revoke", method="DELETE", path="/organizations/{organization_id}/portal-links/{id}", path_params=("organization_id", "id"), scope="portal_links:write", danger="destructive", approval=True, body=False, pagination=None),
     "organizations.reactivate": OperationSpec(action="organizations.reactivate", operation_id="organizations_reactivate", method="POST", path="/organizations/{id}/reactivate", path_params=("id",), scope="organizations:write", danger="write", approval=True, body=False, pagination=None),
     "organizations.suspend": OperationSpec(action="organizations.suspend", operation_id="organizations_suspend", method="POST", path="/organizations/{id}/suspend", path_params=("id",), scope="organizations:write", danger="write", approval=True, body=False, pagination=None),
     "organizations.transfer_ownership": OperationSpec(action="organizations.transfer_ownership", operation_id="organizations_transfer_ownership", method="POST", path="/organizations/{id}/transfer-ownership", path_params=("id",), scope="organizations:write", danger=None, approval=True, body=True, pagination=None),
@@ -2992,6 +3252,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "webhooks.pause": OperationSpec(action="webhooks.pause", operation_id="webhooks_pause", method="POST", path="/webhooks/{id}/pause", path_params=("id",), scope="webhooks:write", danger="write", approval=True, body=False, pagination=None),
     "webhooks.resume": OperationSpec(action="webhooks.resume", operation_id="webhooks_resume", method="POST", path="/webhooks/{id}/resume", path_params=("id",), scope="webhooks:write", danger="write", approval=True, body=False, pagination=None),
     "webhooks.secret.rotate": OperationSpec(action="webhooks.secret.rotate", operation_id="webhooks_secret_rotate", method="POST", path="/webhooks/{id}/rotate", path_params=("id",), scope="webhooks:write", danger="critical", approval=True, body=False, pagination=None),
+    "webhooks.signature_scheme.change": OperationSpec(action="webhooks.signature_scheme.change", operation_id="webhooks_signature_scheme_change", method="POST", path="/webhooks/{id}/signature-scheme", path_params=("id",), scope="webhooks:write", danger="destructive", approval=True, body=True, pagination=None),
     "webhooks.update": OperationSpec(action="webhooks.update", operation_id="webhooks_update", method="PATCH", path="/webhooks/{id}", path_params=("id",), scope="webhooks:write", danger="write", approval=True, body=True, pagination=None),
 }
 
@@ -3237,7 +3498,13 @@ class ApisMethods:
         self._core = core
         self.scopes = ApisScopesMethods(core)
 
-    def create(self, body: ApisCreateBody, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api]:
+    @overload
+    def create(self, body: ApisCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api]: ...
+
+    @overload
+    def create(self, body: ApisCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api] | PendingApprovalResult[Api]: ...
+
+    def create(self, body: ApisCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api] | PendingApprovalResult[Api]:
         """Register an API and its scopes
 
         Requires scope `apis:write`. Registering an API is the environment's act; no tenant
@@ -3249,10 +3516,17 @@ class ApisMethods:
 
         ``POST /apis``
         Scope ``apis:write``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apis.create"], (), body, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apis.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
-    def delete(self, id: str, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]:
+    @overload
+    def delete(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def delete(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def delete(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
         """Delete an API and its scopes
 
         Requires scope `apis:write`. Tokens already minted for it keep their `aud` until they
@@ -3260,34 +3534,55 @@ class ApisMethods:
 
         ``DELETE /apis/{id}``
         Scope ``apis:write``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apis.delete"], (id,), None, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apis.delete"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
-    def get(self, id: str, *, headers: Mapping[str, str] | None = None) -> ApiResponse[Api]:
+    @overload
+    def get(self, id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api]: ...
+
+    @overload
+    def get(self, id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api] | PendingApprovalResult[Api]: ...
+
+    def get(self, id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api] | PendingApprovalResult[Api]:
         """Get an API
 
         Requires scope `apis:read`.
 
         ``GET /apis/{id}``
         Scope ``apis:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apis.get"], (id,), None, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apis.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
 
-    def list(self, query: ApisListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> ApiResponse[ApisListData]:
+    @overload
+    def list(self, query: ApisListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ApisListData]: ...
+
+    @overload
+    def list(self, query: ApisListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ApisListData] | PendingApprovalResult[ApisListData]: ...
+
+    def list(self, query: ApisListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ApisListData] | PendingApprovalResult[ApisListData]:
         """List registered APIs
 
         Requires scope `apis:read`.
 
         ``GET /apis``
         Scope ``apis:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apis.list"], (), query, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apis.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
 
     def list_all(self, query: ApisListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[Api]:
         """Every item of ``apis.list``, fetching pages as the iteration reaches them."""
         return self._core.paginate(ENVIRONMENT_OPERATIONS["apis.list"], (), query, headers=headers)
 
-    def update(self, id: str, body: ApisUpdateBody | None = None, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api]:
+    @overload
+    def update(self, id: str, body: ApisUpdateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api]: ...
+
+    @overload
+    def update(self, id: str, body: ApisUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api] | PendingApprovalResult[Api]: ...
+
+    def update(self, id: str, body: ApisUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Api] | PendingApprovalResult[Api]:
         """Change an API
 
         Requires scope `apis:write`. Any of: `name`; `client_id` (null unlinks the app);
@@ -3297,8 +3592,9 @@ class ApisMethods:
 
         ``PATCH /apis/{id}``
         Scope ``apis:write``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apis.update"], (id,), body, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apis.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
 class ApprovalsMethods:
@@ -3370,12 +3666,12 @@ class AppsManifestMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["apps.manifest.set"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
-    def sync(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsManifestSyncData]: ...
+    def sync(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManifestSync]: ...
 
     @overload
-    def sync(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsManifestSyncData] | PendingApprovalResult[AppsManifestSyncData]: ...
+    def sync(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManifestSync] | PendingApprovalResult[ManifestSync]: ...
 
-    def sync(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsManifestSyncData] | PendingApprovalResult[AppsManifestSyncData]:
+    def sync(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManifestSync] | PendingApprovalResult[ManifestSync]:
         """Fetch an app's published manifest now and sync the roles and permissions it declares.
 
         Requires scope `apps:write`. Danger: write.
@@ -3417,7 +3713,13 @@ class AppsSecretsMethods:
     def __init__(self, core: ManagementTransport) -> None:
         self._core = core
 
-    def list(self, id: str, *, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsSecretsListData]:
+    @overload
+    def list(self, id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsSecretsListData]: ...
+
+    @overload
+    def list(self, id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsSecretsListData] | PendingApprovalResult[AppsSecretsListData]: ...
+
+    def list(self, id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsSecretsListData] | PendingApprovalResult[AppsSecretsListData]:
         """List an app's live client secrets
 
         Requires scope `apps:read`. Every live secret, newest first: its id (what
@@ -3427,8 +3729,9 @@ class AppsSecretsMethods:
 
         ``GET /apps/{id}/secrets`` · action ``apps.secrets.list``
         Scope ``apps:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apps.secrets.list"], (id,), None, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apps.secrets.list"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
 
     @overload
     def revoke(self, id: str, secret_id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
@@ -3550,7 +3853,13 @@ class AppsMethods:
         self.secrets = AppsSecretsMethods(core)
         self.settings = AppsSettingsMethods(core)
 
-    def blueprint(self, id: str, *, headers: Mapping[str, str] | None = None) -> ApiResponse[AppBlueprint]:
+    @overload
+    def blueprint(self, id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppBlueprint]: ...
+
+    @overload
+    def blueprint(self, id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppBlueprint] | PendingApprovalResult[AppBlueprint]: ...
+
+    def blueprint(self, id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppBlueprint] | PendingApprovalResult[AppBlueprint]:
         """Export an app's configuration as a blueprint
 
         Requires scope `apps:read`. `{id}` is the app's id or its `client_id`. The document
@@ -3560,8 +3869,9 @@ class AppsMethods:
 
         ``GET /apps/{id}/blueprint`` · action ``apps.blueprint``
         Scope ``apps:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apps.blueprint"], (id,), None, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apps.blueprint"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
 
     @overload
     def copy(self, id: str, body: AppsCopyBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App]: ...
@@ -3580,7 +3890,13 @@ class AppsMethods:
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apps.copy"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
-    def create(self, body: AppsCreateBody | None = None, *, idempotency_key: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App]:
+    @overload
+    def create(self, body: AppsCreateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App]: ...
+
+    @overload
+    def create(self, body: AppsCreateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App] | PendingApprovalResult[App]: ...
+
+    def create(self, body: AppsCreateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App] | PendingApprovalResult[App]:
         """Register an app
 
         Requires scope `apps:write`. Two ways to describe it:
@@ -3603,8 +3919,9 @@ class AppsMethods:
 
         ``POST /apps`` · action ``apps.create``
         Scope ``apps:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apps.create"], (), body, idempotency_key=idempotency_key, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apps.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
     def delete(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
@@ -3640,15 +3957,22 @@ class AppsMethods:
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apps.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
 
-    def list(self, query: AppsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsListData]:
+    @overload
+    def list(self, query: AppsListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsListData]: ...
+
+    @overload
+    def list(self, query: AppsListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsListData] | PendingApprovalResult[AppsListData]: ...
+
+    def list(self, query: AppsListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsListData] | PendingApprovalResult[AppsListData]:
         """List apps
 
         Requires scope `apps:read`. Never a secret.
 
         ``GET /apps`` · action ``apps.list``
         Scope ``apps:read``.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["apps.list"], (), query, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["apps.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
 
     def list_all(self, query: AppsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[App]:
         """Every item of ``apps.list``, fetching pages as the iteration reaches them."""
@@ -4640,12 +4964,12 @@ class KeysMethods:
         self._core = core
 
     @overload
-    def create(self, body: KeysCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[KeysCreateData]: ...
+    def create(self, body: KeysCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManagementKey]: ...
 
     @overload
-    def create(self, body: KeysCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[KeysCreateData] | PendingApprovalResult[KeysCreateData]: ...
+    def create(self, body: KeysCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManagementKey] | PendingApprovalResult[ManagementKey]: ...
 
-    def create(self, body: KeysCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[KeysCreateData] | PendingApprovalResult[KeysCreateData]:
+    def create(self, body: KeysCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManagementKey] | PendingApprovalResult[ManagementKey]:
         """Mint a management key for this environment, at most as wide as the caller. The value is returned once, as `token`.
 
         Requires scope `keys:write`. Danger: critical.
@@ -4673,7 +4997,7 @@ class KeysMethods:
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["keys.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
 
-    def list_all(self, query: KeysListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[KeysListItem]:
+    def list_all(self, query: KeysListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[ManagementKey]:
         """Every item of ``keys.list``, fetching pages as the iteration reaches them."""
         return self._core.paginate(ENVIRONMENT_OPERATIONS["keys.list"], (), query, headers=headers)
 
@@ -4695,12 +5019,12 @@ class KeysMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["keys.revoke"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
-    def rotate(self, id: str, body: KeysRotateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[KeysRotateData]: ...
+    def rotate(self, id: str, body: KeysRotateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManagementKey]: ...
 
     @overload
-    def rotate(self, id: str, body: KeysRotateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[KeysRotateData] | PendingApprovalResult[KeysRotateData]: ...
+    def rotate(self, id: str, body: KeysRotateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManagementKey] | PendingApprovalResult[ManagementKey]: ...
 
-    def rotate(self, id: str, body: KeysRotateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[KeysRotateData] | PendingApprovalResult[KeysRotateData]:
+    def rotate(self, id: str, body: KeysRotateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ManagementKey] | PendingApprovalResult[ManagementKey]:
         """Rotate a management key: mint a successor with the same scopes and retire the old one after a grace period.
 
         Requires scope `keys:write`. Danger: critical.
@@ -4753,12 +5077,12 @@ class LegacyLoginMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["legacy_login.get"], (), None, approval=approval, approval_id=approval_id, headers=headers)
 
     @overload
-    def probe(self, body: LegacyLoginProbeBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LegacyLoginProbeData]: ...
+    def probe(self, body: LegacyLoginProbeBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LegacyLoginProbe]: ...
 
     @overload
-    def probe(self, body: LegacyLoginProbeBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LegacyLoginProbeData] | PendingApprovalResult[LegacyLoginProbeData]: ...
+    def probe(self, body: LegacyLoginProbeBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LegacyLoginProbe] | PendingApprovalResult[LegacyLoginProbe]: ...
 
-    def probe(self, body: LegacyLoginProbeBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LegacyLoginProbeData] | PendingApprovalResult[LegacyLoginProbeData]:
+    def probe(self, body: LegacyLoginProbeBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LegacyLoginProbe] | PendingApprovalResult[LegacyLoginProbe]:
         """Ask the declared legacy login endpoint whether it knows an address — your own — to test it before approving. Sends no password.
 
         Requires scope `signin:write`. Danger: write.
@@ -4800,7 +5124,7 @@ class LogStreamsMethods:
     def create(self, body: LogStreamsCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStream] | PendingApprovalResult[LogStream]: ...
 
     def create(self, body: LogStreamsCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStream] | PendingApprovalResult[LogStream]:
-        """Stream the audit trail to a SIEM (Splunk, Elastic, Graylog, CEF, JSON). A generated HMAC key is returned once.
+        """Stream the audit trail to a SIEM (Splunk, Elastic, Graylog, CEF, JSON), Datadog, or an S3 or GCS bucket. A generated HMAC key is returned once.
 
         Requires scope `log_streams:write`. Danger: critical.
 
@@ -4872,7 +5196,7 @@ class LogStreamsMethods:
     def test(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStreamTest] | PendingApprovalResult[LogStreamTest]: ...
 
     def test(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStreamTest] | PendingApprovalResult[LogStreamTest]:
-        """Send one test entry to a log stream now and report whether the SIEM accepted it.
+        """Send one test event to a log stream now and report whether the destination accepted it, and if not, why.
 
         Requires scope `log_streams:write`. Danger: write.
 
@@ -4883,13 +5207,13 @@ class LogStreamsMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["log_streams.test"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
-    def update(self, id: str, body: LogStreamsUpdateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStream]: ...
+    def update(self, id: str, body: LogStreamsUpdateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStream]: ...
 
     @overload
-    def update(self, id: str, body: LogStreamsUpdateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStream] | PendingApprovalResult[LogStream]: ...
+    def update(self, id: str, body: LogStreamsUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStream] | PendingApprovalResult[LogStream]: ...
 
-    def update(self, id: str, body: LogStreamsUpdateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStream] | PendingApprovalResult[LogStream]:
-        """Disable (enabled: false) or resume (enabled: true) an audit log stream. Disabled, entries are kept and delivered on resume.
+    def update(self, id: str, body: LogStreamsUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[LogStream] | PendingApprovalResult[LogStream]:
+        """Change an audit log stream's name, destination, endpoint, options or credential (re-validated; resets its circuit breaker), or disable (enabled: false) / resume (enabled: true) it.
 
         Requires scope `log_streams:write`. Danger: critical.
 
@@ -5181,6 +5505,44 @@ class OrganizationsPortalLinksMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["organizations.portal_links.create"], (organization_id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, organization_id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OrganizationsPortalLinksListData]: ...
+
+    @overload
+    def list(self, organization_id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OrganizationsPortalLinksListData] | PendingApprovalResult[OrganizationsPortalLinksListData]: ...
+
+    def list(self, organization_id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OrganizationsPortalLinksListData] | PendingApprovalResult[OrganizationsPortalLinksListData]:
+        """List an organization's Admin Portal links
+
+        Requires scope `portal_links:read`. Danger: read. The links minted in the last 30
+        days, newest first — every link that can still be opened is among them, since a link
+        waits a week at most. Each says what it opens, who minted it, whom it was mailed to
+        and where it stands (`status`). Never the link itself: it was shown once, when it was
+        minted, and only its hash is kept. Not paged.
+
+        ``GET /organizations/{organization_id}/portal-links`` · action ``organizations.portal_links.list``
+        Scope ``portal_links:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["organizations.portal_links.list"], (organization_id,), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def revoke(self, organization_id: str, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def revoke(self, organization_id: str, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def revoke(self, organization_id: str, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Withdraw an Admin Portal link: it can no longer be opened, and a setup session it already opened ends on its next request. What was already set up through it stays.
+
+        Requires scope `portal_links:write`. Danger: destructive.
+
+        ``DELETE /organizations/{organization_id}/portal-links/{id}`` · action ``organizations.portal_links.revoke``
+        Scope ``portal_links:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["organizations.portal_links.revoke"], (organization_id, id), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
 class OrganizationsMethods:
@@ -5836,12 +6198,12 @@ class SigninSelfServiceSignupMethods:
         self._core = core
 
     @overload
-    def set(self, body: SigninSelfServiceSignupSetBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SigninSelfServiceSignupSetData]: ...
+    def set(self, body: SigninSelfServiceSignupSetBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SelfServiceSignup]: ...
 
     @overload
-    def set(self, body: SigninSelfServiceSignupSetBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SigninSelfServiceSignupSetData] | PendingApprovalResult[SigninSelfServiceSignupSetData]: ...
+    def set(self, body: SigninSelfServiceSignupSetBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SelfServiceSignup] | PendingApprovalResult[SelfServiceSignup]: ...
 
-    def set(self, body: SigninSelfServiceSignupSetBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SigninSelfServiceSignupSetData] | PendingApprovalResult[SigninSelfServiceSignupSetData]:
+    def set(self, body: SigninSelfServiceSignupSetBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SelfServiceSignup] | PendingApprovalResult[SelfServiceSignup]:
         """Switch self-service sign-up on or off: whether people can create an account and their own organization in this environment.
 
         Requires scope `signin:write`. Danger: critical.
@@ -6992,12 +7354,37 @@ class WebhooksSecretMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["webhooks.secret.rotate"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class WebhooksSignatureSchemeMethods:
+    """``webhooks.signature_scheme.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def change(self, id: str, body: WebhooksSignatureSchemeChangeBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Webhook]: ...
+
+    @overload
+    def change(self, id: str, body: WebhooksSignatureSchemeChangeBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Webhook] | PendingApprovalResult[Webhook]: ...
+
+    def change(self, id: str, body: WebhooksSignatureSchemeChangeBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Webhook] | PendingApprovalResult[Webhook]:
+        """Change how a webhook endpoint's deliveries are signed (cbox or standard_webhooks). No new secret is issued: a hex secret is used as whsec_ + base64 of itself. Update the receiver first.
+
+        Requires scope `webhooks:write`. Danger: destructive.
+
+        ``POST /webhooks/{id}/signature-scheme`` · action ``webhooks.signature_scheme.change``
+        Scope ``webhooks:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["webhooks.signature_scheme.change"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 class WebhooksMethods:
     """``webhooks.*``"""
 
     def __init__(self, core: ManagementTransport) -> None:
         self._core = core
         self.secret = WebhooksSecretMethods(core)
+        self.signature_scheme = WebhooksSignatureSchemeMethods(core)
 
     @overload
     def create(self, body: WebhooksCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Webhook]: ...
