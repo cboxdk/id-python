@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cbox-id-client"
-version = "0.9.0"
+version = "0.10.0"
 description = "Turnkey Cbox ID client for Python — OpenID Connect login (PKCE + id_token verification via JWKS), hosted profile-management redirect, machine tokens, UserInfo, RFC 7662 introspection, and webhook signature verification."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
   "httpx>=0.27",
   "pyjwt[crypto]>=2.8",
+  "typing-extensions>=4.7",
 ]
 
 [project.urls]
@@ -36,6 +37,9 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.6",
   "mypy>=1.11",
+  # The management-client generator (scripts/generate_management.py) and its drift test.
+  "pyyaml>=6.0",
+  "types-PyYAML>=6.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -43,15 +47,30 @@ packages = ["src/cbox_id"]
 
 [tool.ruff]
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.format]
+# Generated code is compared byte for byte with the generator's output (a test does).
+exclude = ["src/cbox_id/management/generated/*"]
+
+[tool.ruff.lint.per-file-ignores]
+# Generated from the OpenAPI documents: descriptions and signatures are kept on one line.
+"src/cbox_id/management/generated/*" = ["E501"]
+
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["src"]
+files = [
+  "src",
+  "scripts",
+  # The management tests assert the generated types (`assert_type`), so they are checked too.
+  "tests/management_helpers.py",
+  "tests/test_management.py",
+  "tests/test_management_audit_logs.py",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

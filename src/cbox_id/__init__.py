@@ -35,7 +35,7 @@ from .models import (
     RefreshedTokens,
 )
 from .pkce import challenge, create_verifier, random_token
-from .webhook import verify_webhook
+from .webhook import verify_standard_webhook, verify_webhook
 
 __all__ = [
     "FrontendClient",
@@ -72,5 +72,6 @@ __all__ = [
     "permissions",
     "random_token",
     "roles",
+    "verify_standard_webhook",
     "verify_webhook",
 ]
