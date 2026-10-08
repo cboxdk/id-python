@@ -93,7 +93,7 @@ request abstraction invented to avoid them.
 > below works; you install it from source.
 
 ```bash
-pip install git+https://github.com/cboxdk/id-python@v0.8.0
+pip install git+https://github.com/cboxdk/id-python@v0.9.0
 ```
 
 ## Log in users
@@ -345,6 +345,26 @@ ok = verify_webhook(
 )
 ```
 
+An endpoint switched to the `standard_webhooks` signature scheme sends `webhook-id`,
+`webhook-timestamp` and `webhook-signature` instead, verifiable with any
+[Standard Webhooks](https://www.standardwebhooks.com) library or with:
+
+```python
+from cbox_id import verify_standard_webhook
+
+ok = verify_standard_webhook(
+    raw_body,  # the exact bytes received
+    webhook_id=request.headers.get("webhook-id"),
+    webhook_timestamp=request.headers.get("webhook-timestamp"),
+    webhook_signature=request.headers.get("webhook-signature"),
+    secret=os.environ["CBOX_ID_WEBHOOK_SECRET"],  # whsec_…, or the endpoint's hex secret
+)
+```
+
+Switching scheme keeps the secret: a hex Cbox secret is used as `whsec_` + base64 of itself,
+and both forms verify here. Update the receiver before you switch the endpoint
+(`env.webhooks.signature_scheme.change(id, {"signature_scheme": "standard_webhooks"})`).
+
 ## Management API
 
 `cbox_id.management` is a typed client for Cbox ID's management planes. It is generated from
@@ -498,6 +518,7 @@ never records an event twice:
 from collections.abc import Sequence
 
 from cbox_id.management import AuditLogEventInput, AuditLogger
+
 
 def report(exc: Exception, batch: Sequence[AuditLogEventInput]) -> None:
     log.warning("audit flush failed (%d events kept for the next one): %s", len(batch), exc)

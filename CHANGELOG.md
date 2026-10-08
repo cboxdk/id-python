@@ -8,7 +8,7 @@ by their tags and commit history.
 ### Added
 
 - `cbox_id.management`: typed clients for Cbox ID's management planes, generated from the
-  OpenAPI documents the server publishes. `EnvironmentClient` (an environment's own host,
+  OpenAPI documents the server publishes (vendored from Cbox ID's wave-7 specs). `EnvironmentClient` (an environment's own host,
   `cbid_env_…` key or delegated token), `WorkspaceClient` (`cbid_ws_…` key),
   `PlatformClient` (operator token) and `AccountClient` (a person's own token). Methods are
   named after the server's actions (`env.apps.secrets.rotate(id, body)`,
@@ -38,12 +38,17 @@ by their tags and commit history.
   `DPoP-Nonce` challenge handling.
 - Operation tables (`ENVIRONMENT_OPERATIONS`, …) with each action's method, path, scope,
   danger and whether it can be held for approval.
+- `verify_standard_webhook()`: verifies deliveries from an endpoint on the
+  `standard_webhooks` signature scheme (`webhook-id` / `webhook-timestamp` /
+  `webhook-signature`), with a `whsec_…` secret or the endpoint's hex Cbox secret. Tested
+  against the Standard Webhooks specification's vector.
 - `python -m scripts.generate_management` regenerates the clients from the vendored specs in
   `openapi/`; `--fetch <plane>=<host>` refreshes a spec from a running server first, and
   `--check` fails when the generated code is stale. So does the test suite.
 
 ### Changed
 
+- README: the install line pinned v0.8.0; it now names v0.9.0.
 - New runtime dependency: `typing-extensions>=4.7` (`NotRequired` and `TypedDict` on
   Python 3.10). The `dev` extra adds `pyyaml` and `types-PyYAML` for the generator.
 
