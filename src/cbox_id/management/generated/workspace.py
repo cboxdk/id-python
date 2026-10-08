@@ -295,28 +295,28 @@ WORKSPACE_OPERATIONS: Mapping[str, OperationSpec] = {
     "environments.domain.remove": OperationSpec(action="environments.domain.remove", operation_id="environments_domain_remove", method="DELETE", path="/workspace/environments/{environment_id}/domain", path_params=("environment_id",), scope="environments:write", danger="destructive", approval=True, body=False, pagination=None),
     "environments.domain.request": OperationSpec(action="environments.domain.request", operation_id="environments_domain_request", method="POST", path="/workspace/environments/{environment_id}/domain", path_params=("environment_id",), scope="environments:write", danger="write", approval=True, body=True, pagination=None),
     "environments.domain.verify": OperationSpec(action="environments.domain.verify", operation_id="environments_domain_verify", method="POST", path="/workspace/environments/{environment_id}/domain/verify", path_params=("environment_id",), scope="environments:write", danger="write", approval=True, body=False, pagination=None),
-    "environments.list": OperationSpec(action="environments.list", operation_id="environments_list", method="GET", path="/workspace/environments", path_params=(), scope="workspace:read", danger=None, approval=True, body=False, pagination="page"),
+    "environments.list": OperationSpec(action="environments.list", operation_id="environments_list", method="GET", path="/workspace/environments", path_params=(), scope="workspace:read", danger="read", approval=True, body=False, pagination="page"),
     "keys.environment.create": OperationSpec(action="keys.environment.create", operation_id="keys_environment_create", method="POST", path="/workspace/environments/{environment_id}/keys", path_params=("environment_id",), scope="keys:write", danger="critical", approval=True, body=True, pagination=None),
     "keys.environment.revoke": OperationSpec(action="keys.environment.revoke", operation_id="keys_environment_revoke", method="DELETE", path="/workspace/environments/{environment_id}/keys/{id}", path_params=("environment_id", "id"), scope="keys:write", danger="destructive", approval=True, body=False, pagination=None),
     "keys.workspace.create": OperationSpec(action="keys.workspace.create", operation_id="keys_workspace_create", method="POST", path="/workspace/keys", path_params=(), scope="keys:write", danger="critical", approval=True, body=True, pagination=None),
     "keys.workspace.list": OperationSpec(action="keys.workspace.list", operation_id="keys_workspace_list", method="GET", path="/workspace/keys", path_params=(), scope="workspace:read", danger="read", approval=True, body=False, pagination="page"),
     "keys.workspace.revoke": OperationSpec(action="keys.workspace.revoke", operation_id="keys_workspace_revoke", method="DELETE", path="/workspace/keys/{id}", path_params=("id",), scope="keys:write", danger="destructive", approval=True, body=False, pagination=None),
-    "projects.create": OperationSpec(action="projects.create", operation_id="projects_create", method="POST", path="/workspace/projects", path_params=(), scope="projects:write", danger=None, approval=True, body=True, pagination=None),
-    "projects.list": OperationSpec(action="projects.list", operation_id="projects_list", method="GET", path="/workspace/projects", path_params=(), scope="workspace:read", danger=None, approval=True, body=False, pagination=None),
+    "projects.create": OperationSpec(action="projects.create", operation_id="projects_create", method="POST", path="/workspace/projects", path_params=(), scope="projects:write", danger="write", approval=True, body=True, pagination=None),
+    "projects.list": OperationSpec(action="projects.list", operation_id="projects_list", method="GET", path="/workspace/projects", path_params=(), scope="workspace:read", danger="read", approval=True, body=False, pagination=None),
     "projects.reactivate": OperationSpec(action="projects.reactivate", operation_id="projects_reactivate", method="POST", path="/workspace/projects/{id}/reactivate", path_params=("id",), scope="projects:write", danger="write", approval=True, body=False, pagination=None),
     "projects.rename": OperationSpec(action="projects.rename", operation_id="projects_rename", method="PATCH", path="/workspace/projects/{id}", path_params=("id",), scope="projects:write", danger="write", approval=True, body=True, pagination=None),
     "projects.suspend": OperationSpec(action="projects.suspend", operation_id="projects_suspend", method="POST", path="/workspace/projects/{id}/suspend", path_params=("id",), scope="projects:write", danger="write", approval=True, body=False, pagination=None),
     "projects.verification.resend": OperationSpec(action="projects.verification.resend", operation_id="projects_verification_resend", method="POST", path="/workspace/projects/verification/resend", path_params=(), scope="projects:write", danger="write", approval=True, body=False, pagination=None),
     "team.environment_access": OperationSpec(action="team.environment_access", operation_id="team_environment_access", method="PUT", path="/workspace/members/{id}/access", path_params=("id",), scope="team:write", danger="write", approval=True, body=True, pagination=None),
-    "team.invitations.list": OperationSpec(action="team.invitations.list", operation_id="team_invitations_list", method="GET", path="/workspace/invitations", path_params=(), scope="team:read", danger=None, approval=True, body=False, pagination=None),
-    "team.invitations.resend": OperationSpec(action="team.invitations.resend", operation_id="team_invitations_resend", method="POST", path="/workspace/invitations/{id}/resend", path_params=("id",), scope="team:write", danger=None, approval=True, body=False, pagination=None),
-    "team.invitations.revoke": OperationSpec(action="team.invitations.revoke", operation_id="team_invitations_revoke", method="DELETE", path="/workspace/invitations/{id}", path_params=("id",), scope="team:write", danger=None, approval=True, body=False, pagination=None),
-    "team.invite": OperationSpec(action="team.invite", operation_id="team_invite", method="POST", path="/workspace/members", path_params=(), scope="team:write", danger=None, approval=True, body=True, pagination=None),
-    "team.list": OperationSpec(action="team.list", operation_id="team_list", method="GET", path="/workspace/members", path_params=(), scope="team:read", danger=None, approval=True, body=False, pagination="page"),
+    "team.invitations.list": OperationSpec(action="team.invitations.list", operation_id="team_invitations_list", method="GET", path="/workspace/invitations", path_params=(), scope="team:read", danger="read", approval=True, body=False, pagination=None),
+    "team.invitations.resend": OperationSpec(action="team.invitations.resend", operation_id="team_invitations_resend", method="POST", path="/workspace/invitations/{id}/resend", path_params=("id",), scope="team:write", danger="write", approval=True, body=False, pagination=None),
+    "team.invitations.revoke": OperationSpec(action="team.invitations.revoke", operation_id="team_invitations_revoke", method="DELETE", path="/workspace/invitations/{id}", path_params=("id",), scope="team:write", danger="destructive", approval=True, body=False, pagination=None),
+    "team.invite": OperationSpec(action="team.invite", operation_id="team_invite", method="POST", path="/workspace/members", path_params=(), scope="team:write", danger="write", approval=True, body=True, pagination=None),
+    "team.list": OperationSpec(action="team.list", operation_id="team_list", method="GET", path="/workspace/members", path_params=(), scope="team:read", danger="read", approval=True, body=False, pagination="page"),
     "team.remove": OperationSpec(action="team.remove", operation_id="team_remove", method="DELETE", path="/workspace/members/{id}", path_params=("id",), scope="team:write", danger="destructive", approval=True, body=False, pagination=None),
     "team.role": OperationSpec(action="team.role", operation_id="team_role", method="PATCH", path="/workspace/members/{id}/role", path_params=("id",), scope="team:write", danger="write", approval=True, body=True, pagination=None),
     "team.transfer_ownership": OperationSpec(action="team.transfer_ownership", operation_id="team_transfer_ownership", method="POST", path="/workspace/members/{id}/transfer-ownership", path_params=("id",), scope="team:write", danger="critical", approval=True, body=False, pagination=None),
-    "workspace.get": OperationSpec(action="workspace.get", operation_id="workspace_get", method="GET", path="/workspace", path_params=(), scope="workspace:read", danger=None, approval=True, body=False, pagination=None),
+    "workspace.get": OperationSpec(action="workspace.get", operation_id="workspace_get", method="GET", path="/workspace", path_params=(), scope="workspace:read", danger="read", approval=True, body=False, pagination=None),
     "workspace.settings.update": OperationSpec(action="workspace.settings.update", operation_id="workspace_settings_update", method="PATCH", path="/workspace", path_params=(), scope="settings:write", danger="write", approval=True, body=True, pagination=None),
 }
 
@@ -441,7 +441,7 @@ class EnvironmentsMethods:
         Requires scope `workspace:read` (any role).
 
         ``GET /workspace/environments`` · action ``environments.list``
-        Scope ``workspace:read``.
+        Scope ``workspace:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["environments.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -606,7 +606,7 @@ class ProjectsMethods:
         Stand up another independently-billed IdP product. Requires scope `projects:write` and the `manage-environments` capability (owner/admin/developer).
 
         ``POST /workspace/projects`` · action ``projects.create``
-        Scope ``projects:write``.
+        Scope ``projects:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["projects.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -623,7 +623,7 @@ class ProjectsMethods:
         Requires scope `workspace:read` (any role). The workspace's projects (IdP products). Each carries its own plan and environment allowance.
 
         ``GET /workspace/projects`` · action ``projects.list``
-        Scope ``workspace:read``.
+        Scope ``workspace:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["projects.list"], (), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -698,7 +698,7 @@ class TeamInvitationsMethods:
         Requires scope `team:read` and the `read-members` capability. The team's invitations nobody has accepted yet, newest first (at most 100).
 
         ``GET /workspace/invitations`` · action ``team.invitations.list``
-        Scope ``team:read``.
+        Scope ``team:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["team.invitations.list"], (), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -717,7 +717,7 @@ class TeamInvitationsMethods:
         (`429`, `too_soon`). If the mail server refuses, the earlier invitation is kept (`503`).
 
         ``POST /workspace/invitations/{id}/resend`` · action ``team.invitations.resend``
-        Scope ``team:write``.
+        Scope ``team:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["team.invitations.resend"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -734,7 +734,7 @@ class TeamInvitationsMethods:
         Requires scope `team:write` and the `manage-members` capability. The link stops working. An invitation that is not pending in this workspace is a `404`.
 
         ``DELETE /workspace/invitations/{id}`` · action ``team.invitations.revoke``
-        Scope ``team:write``.
+        Scope ``team:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["team.invitations.revoke"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -781,7 +781,7 @@ class TeamMethods:
         withdraw it under `/workspace/invitations`.
 
         ``POST /workspace/members`` · action ``team.invite``
-        Scope ``team:write``.
+        Scope ``team:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["team.invite"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -798,7 +798,7 @@ class TeamMethods:
         Requires scope `team:read` and the `read-members` capability (owner/admin/viewer). The roster is PII — a developer key is refused.
 
         ``GET /workspace/members`` · action ``team.list``
-        Scope ``team:read``.
+        Scope ``team:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["team.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -902,7 +902,7 @@ class WorkspaceMethods:
         Requires scope `workspace:read` (any role). Returns the workspace's identity. The `projects` block (each project's plan/allowance) is included only for keys whose role can read billing (owner/admin/viewer — not developer).
 
         ``GET /workspace`` · action ``workspace.get``
-        Scope ``workspace:read``.
+        Scope ``workspace:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(WORKSPACE_OPERATIONS["workspace.get"], (), None, approval=approval, approval_id=approval_id, headers=headers)

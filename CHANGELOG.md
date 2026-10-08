@@ -5,6 +5,8 @@ by their tags and commit history.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-08
+
 ### Added
 
 - `cbox_id.management`: typed clients for Cbox ID's management planes, generated from the

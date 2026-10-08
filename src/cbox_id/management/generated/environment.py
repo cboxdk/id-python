@@ -3057,27 +3057,27 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "access_reviews.items.list": OperationSpec(action="access_reviews.items.list", operation_id="access_reviews_items_list", method="GET", path="/access-reviews/{id}/items", path_params=("id",), scope="governance:read", danger="read", approval=True, body=False, pagination="cursor"),
     "access_reviews.list": OperationSpec(action="access_reviews.list", operation_id="access_reviews_list", method="GET", path="/access-reviews", path_params=(), scope="governance:read", danger="read", approval=True, body=False, pagination="cursor"),
     "action_approvals.get": OperationSpec(action=None, operation_id=None, method="GET", path="/action-approvals/{id}", path_params=("id",), scope=None, danger=None, approval=False, body=False, pagination=None),
-    "api_keys.list": OperationSpec(action="api_keys.list", operation_id="api_keys_list", method="GET", path="/organizations/{organization_id}/api-keys", path_params=("organization_id",), scope="api_keys:read", danger=None, approval=True, body=False, pagination="cursor"),
-    "api_keys.revoke": OperationSpec(action="api_keys.revoke", operation_id="api_keys_revoke", method="DELETE", path="/api-keys/{id}", path_params=("id",), scope="api_keys:write", danger=None, approval=True, body=False, pagination=None),
-    "apis.create": OperationSpec(action=None, operation_id=None, method="POST", path="/apis", path_params=(), scope="apis:write", danger=None, approval=True, body=True, pagination=None),
-    "apis.delete": OperationSpec(action=None, operation_id=None, method="DELETE", path="/apis/{id}", path_params=("id",), scope="apis:write", danger=None, approval=True, body=False, pagination=None),
-    "apis.get": OperationSpec(action=None, operation_id=None, method="GET", path="/apis/{id}", path_params=("id",), scope="apis:read", danger=None, approval=True, body=False, pagination=None),
-    "apis.list": OperationSpec(action=None, operation_id=None, method="GET", path="/apis", path_params=(), scope="apis:read", danger=None, approval=True, body=False, pagination="cursor"),
+    "api_keys.list": OperationSpec(action="api_keys.list", operation_id="api_keys_list", method="GET", path="/organizations/{organization_id}/api-keys", path_params=("organization_id",), scope="api_keys:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "api_keys.revoke": OperationSpec(action="api_keys.revoke", operation_id="api_keys_revoke", method="DELETE", path="/api-keys/{id}", path_params=("id",), scope="api_keys:write", danger="destructive", approval=True, body=False, pagination=None),
+    "apis.create": OperationSpec(action="apis.create", operation_id=None, method="POST", path="/apis", path_params=(), scope="apis:write", danger="write", approval=True, body=True, pagination=None),
+    "apis.delete": OperationSpec(action="apis.delete", operation_id=None, method="DELETE", path="/apis/{id}", path_params=("id",), scope="apis:write", danger="destructive", approval=True, body=False, pagination=None),
+    "apis.get": OperationSpec(action="apis.get", operation_id=None, method="GET", path="/apis/{id}", path_params=("id",), scope="apis:read", danger="read", approval=True, body=False, pagination=None),
+    "apis.list": OperationSpec(action="apis.list", operation_id=None, method="GET", path="/apis", path_params=(), scope="apis:read", danger="read", approval=True, body=False, pagination="cursor"),
     "apis.scopes.define": OperationSpec(action="apis.scopes.define", operation_id="apis_scopes_define", method="PUT", path="/apis/{id}/scopes/{key}", path_params=("id", "key"), scope="apis:write", danger="write", approval=True, body=True, pagination=None),
     "apis.scopes.remove": OperationSpec(action="apis.scopes.remove", operation_id="apis_scopes_remove", method="DELETE", path="/apis/{id}/scopes/{key}", path_params=("id", "key"), scope="apis:write", danger="destructive", approval=True, body=False, pagination=None),
-    "apis.update": OperationSpec(action=None, operation_id=None, method="PATCH", path="/apis/{id}", path_params=("id",), scope="apis:write", danger=None, approval=True, body=True, pagination=None),
+    "apis.update": OperationSpec(action="apis.update", operation_id=None, method="PATCH", path="/apis/{id}", path_params=("id",), scope="apis:write", danger="write", approval=True, body=True, pagination=None),
     "approvals.deny": OperationSpec(action="approvals.deny", operation_id="approvals_deny", method="POST", path="/agent-requests/{request_id}/deny", path_params=("request_id",), scope="approvals:write", danger="destructive", approval=True, body=False, pagination=None),
     "approvals.list": OperationSpec(action="approvals.list", operation_id="approvals_list", method="GET", path="/agent-requests", path_params=(), scope="approvals:read", danger="read", approval=True, body=False, pagination="cursor"),
-    "apps.blueprint": OperationSpec(action="apps.blueprint", operation_id="apps_blueprint", method="GET", path="/apps/{id}/blueprint", path_params=("id",), scope="apps:read", danger=None, approval=True, body=False, pagination=None),
+    "apps.blueprint": OperationSpec(action="apps.blueprint", operation_id="apps_blueprint", method="GET", path="/apps/{id}/blueprint", path_params=("id",), scope="apps:read", danger="read", approval=True, body=False, pagination=None),
     "apps.copy": OperationSpec(action="apps.copy", operation_id="apps_copy", method="POST", path="/apps/{id}/copy", path_params=("id",), scope="apps:write", danger="critical", approval=True, body=True, pagination=None),
     "apps.create": OperationSpec(action="apps.create", operation_id="apps_create", method="POST", path="/apps", path_params=(), scope="apps:write", danger="critical", approval=True, body=True, pagination=None),
     "apps.delete": OperationSpec(action="apps.delete", operation_id="apps_delete", method="DELETE", path="/apps/{id}", path_params=("id",), scope="apps:write", danger="critical", approval=True, body=False, pagination=None),
     "apps.get": OperationSpec(action="apps.get", operation_id="apps_get", method="GET", path="/apps/{id}", path_params=("id",), scope="apps:read", danger="read", approval=True, body=False, pagination=None),
-    "apps.list": OperationSpec(action="apps.list", operation_id="apps_list", method="GET", path="/apps", path_params=(), scope="apps:read", danger=None, approval=True, body=False, pagination="cursor"),
+    "apps.list": OperationSpec(action="apps.list", operation_id="apps_list", method="GET", path="/apps", path_params=(), scope="apps:read", danger="read", approval=True, body=False, pagination="cursor"),
     "apps.manifest.set": OperationSpec(action="apps.manifest.set", operation_id="apps_manifest_set", method="PUT", path="/apps/{id}/manifest", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
     "apps.manifest.sync": OperationSpec(action="apps.manifest.sync", operation_id="apps_manifest_sync", method="POST", path="/apps/{id}/manifest/sync", path_params=("id",), scope="apps:write", danger="write", approval=True, body=False, pagination=None),
     "apps.scopes.set": OperationSpec(action="apps.scopes.set", operation_id="apps_scopes_set", method="PUT", path="/apps/{id}/scopes", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
-    "apps.secrets.list": OperationSpec(action="apps.secrets.list", operation_id="apps_secrets_list", method="GET", path="/apps/{id}/secrets", path_params=("id",), scope="apps:read", danger=None, approval=True, body=False, pagination=None),
+    "apps.secrets.list": OperationSpec(action="apps.secrets.list", operation_id="apps_secrets_list", method="GET", path="/apps/{id}/secrets", path_params=("id",), scope="apps:read", danger="read", approval=True, body=False, pagination=None),
     "apps.secrets.revoke": OperationSpec(action="apps.secrets.revoke", operation_id="apps_secrets_revoke", method="DELETE", path="/apps/{id}/secrets/{secret_id}", path_params=("id", "secret_id"), scope="apps:write", danger="critical", approval=True, body=False, pagination=None),
     "apps.secrets.rotate": OperationSpec(action="apps.secrets.rotate", operation_id="apps_secrets_rotate", method="POST", path="/apps/{id}/secrets", path_params=("id",), scope="apps:write", danger="critical", approval=True, body=True, pagination=None),
     "apps.settings.api_key_prefix": OperationSpec(action="apps.settings.api_key_prefix", operation_id="apps_settings_api_key_prefix", method="PUT", path="/apps/{id}/settings/api-key-prefix", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
@@ -3126,10 +3126,10 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "hooks.get": OperationSpec(action="hooks.get", operation_id="hooks_get", method="GET", path="/hooks/{id}", path_params=("id",), scope="hooks:read", danger="read", approval=True, body=False, pagination=None),
     "hooks.list": OperationSpec(action="hooks.list", operation_id="hooks_list", method="GET", path="/hooks", path_params=(), scope="hooks:read", danger="read", approval=True, body=False, pagination="cursor"),
     "hooks.update": OperationSpec(action="hooks.update", operation_id="hooks_update", method="PATCH", path="/hooks/{id}", path_params=("id",), scope="hooks:write", danger="critical", approval=True, body=True, pagination=None),
-    "invitations.list": OperationSpec(action="invitations.list", operation_id="invitations_list", method="GET", path="/organizations/{organization_id}/invitations", path_params=("organization_id",), scope="invitations:read", danger=None, approval=True, body=False, pagination="cursor"),
-    "invitations.resend": OperationSpec(action="invitations.resend", operation_id="invitations_resend", method="POST", path="/organizations/{organization_id}/invitations/{invitation_id}/resend", path_params=("organization_id", "invitation_id"), scope="invitations:write", danger=None, approval=True, body=False, pagination=None),
-    "invitations.revoke": OperationSpec(action="invitations.revoke", operation_id="invitations_revoke", method="DELETE", path="/organizations/{organization_id}/invitations/{invitation_id}", path_params=("organization_id", "invitation_id"), scope="invitations:write", danger=None, approval=True, body=False, pagination=None),
-    "invitations.send": OperationSpec(action="invitations.send", operation_id="invitations_send", method="POST", path="/organizations/{organization_id}/invitations", path_params=("organization_id",), scope="invitations:write", danger=None, approval=True, body=True, pagination=None),
+    "invitations.list": OperationSpec(action="invitations.list", operation_id="invitations_list", method="GET", path="/organizations/{organization_id}/invitations", path_params=("organization_id",), scope="invitations:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "invitations.resend": OperationSpec(action="invitations.resend", operation_id="invitations_resend", method="POST", path="/organizations/{organization_id}/invitations/{invitation_id}/resend", path_params=("organization_id", "invitation_id"), scope="invitations:write", danger="write", approval=True, body=False, pagination=None),
+    "invitations.revoke": OperationSpec(action="invitations.revoke", operation_id="invitations_revoke", method="DELETE", path="/organizations/{organization_id}/invitations/{invitation_id}", path_params=("organization_id", "invitation_id"), scope="invitations:write", danger="destructive", approval=True, body=False, pagination=None),
+    "invitations.send": OperationSpec(action="invitations.send", operation_id="invitations_send", method="POST", path="/organizations/{organization_id}/invitations", path_params=("organization_id",), scope="invitations:write", danger="write", approval=True, body=True, pagination=None),
     "keys.create": OperationSpec(action="keys.create", operation_id="keys_create", method="POST", path="/keys", path_params=(), scope="keys:write", danger="critical", approval=True, body=True, pagination=None),
     "keys.list": OperationSpec(action="keys.list", operation_id="keys_list", method="GET", path="/keys", path_params=(), scope="keys:read", danger="read", approval=True, body=False, pagination="cursor"),
     "keys.revoke": OperationSpec(action="keys.revoke", operation_id="keys_revoke", method="DELETE", path="/keys/{id}", path_params=("id",), scope="keys:write", danger="destructive", approval=True, body=False, pagination=None),
@@ -3144,29 +3144,29 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "log_streams.list": OperationSpec(action="log_streams.list", operation_id="log_streams_list", method="GET", path="/log-streams", path_params=(), scope="log_streams:read", danger="read", approval=True, body=False, pagination="cursor"),
     "log_streams.test": OperationSpec(action="log_streams.test", operation_id="log_streams_test", method="POST", path="/log-streams/{id}/test", path_params=("id",), scope="log_streams:write", danger="write", approval=True, body=False, pagination=None),
     "log_streams.update": OperationSpec(action="log_streams.update", operation_id="log_streams_update", method="PATCH", path="/log-streams/{id}", path_params=("id",), scope="log_streams:write", danger="critical", approval=True, body=True, pagination=None),
-    "members.add": OperationSpec(action="members.add", operation_id="members_add", method="POST", path="/organizations/{organization_id}/members", path_params=("organization_id",), scope="members:write", danger=None, approval=True, body=True, pagination=None),
-    "members.list": OperationSpec(action="members.list", operation_id="members_list", method="GET", path="/organizations/{organization_id}/members", path_params=("organization_id",), scope="members:read", danger=None, approval=True, body=False, pagination="cursor"),
-    "members.remove": OperationSpec(action="members.remove", operation_id="members_remove", method="DELETE", path="/organizations/{organization_id}/members/{user_id}", path_params=("organization_id", "user_id"), scope="members:write", danger=None, approval=True, body=False, pagination=None),
-    "members.roles.grant": OperationSpec(action="members.roles.grant", operation_id="members_roles_grant", method="PUT", path="/organizations/{organization_id}/members/{user_id}/roles/{role_id}", path_params=("organization_id", "user_id", "role_id"), scope="roles:write", danger=None, approval=True, body=False, pagination=None),
-    "members.roles.list": OperationSpec(action="members.roles.list", operation_id="members_roles_list", method="GET", path="/organizations/{organization_id}/members/{user_id}/roles", path_params=("organization_id", "user_id"), scope="roles:read", danger=None, approval=True, body=False, pagination=None),
-    "members.roles.revoke": OperationSpec(action="members.roles.revoke", operation_id="members_roles_revoke", method="DELETE", path="/organizations/{organization_id}/members/{user_id}/roles/{role_id}", path_params=("organization_id", "user_id", "role_id"), scope="roles:write", danger=None, approval=True, body=False, pagination=None),
-    "members.update": OperationSpec(action="members.update", operation_id="members_update", method="PATCH", path="/organizations/{organization_id}/members/{user_id}", path_params=("organization_id", "user_id"), scope="members:write", danger=None, approval=True, body=True, pagination=None),
-    "organizations.create": OperationSpec(action="organizations.create", operation_id="organizations_create", method="POST", path="/organizations", path_params=(), scope="organizations:write", danger=None, approval=True, body=True, pagination=None),
-    "organizations.delete": OperationSpec(action="organizations.delete", operation_id="organizations_delete", method="DELETE", path="/organizations/{id}", path_params=("id",), scope="organizations:write", danger=None, approval=True, body=False, pagination=None),
+    "members.add": OperationSpec(action="members.add", operation_id="members_add", method="POST", path="/organizations/{organization_id}/members", path_params=("organization_id",), scope="members:write", danger="write", approval=True, body=True, pagination=None),
+    "members.list": OperationSpec(action="members.list", operation_id="members_list", method="GET", path="/organizations/{organization_id}/members", path_params=("organization_id",), scope="members:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "members.remove": OperationSpec(action="members.remove", operation_id="members_remove", method="DELETE", path="/organizations/{organization_id}/members/{user_id}", path_params=("organization_id", "user_id"), scope="members:write", danger="destructive", approval=True, body=False, pagination=None),
+    "members.roles.grant": OperationSpec(action="members.roles.grant", operation_id="members_roles_grant", method="PUT", path="/organizations/{organization_id}/members/{user_id}/roles/{role_id}", path_params=("organization_id", "user_id", "role_id"), scope="roles:write", danger="write", approval=True, body=False, pagination=None),
+    "members.roles.list": OperationSpec(action="members.roles.list", operation_id="members_roles_list", method="GET", path="/organizations/{organization_id}/members/{user_id}/roles", path_params=("organization_id", "user_id"), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
+    "members.roles.revoke": OperationSpec(action="members.roles.revoke", operation_id="members_roles_revoke", method="DELETE", path="/organizations/{organization_id}/members/{user_id}/roles/{role_id}", path_params=("organization_id", "user_id", "role_id"), scope="roles:write", danger="destructive", approval=True, body=False, pagination=None),
+    "members.update": OperationSpec(action="members.update", operation_id="members_update", method="PATCH", path="/organizations/{organization_id}/members/{user_id}", path_params=("organization_id", "user_id"), scope="members:write", danger="write", approval=True, body=True, pagination=None),
+    "organizations.create": OperationSpec(action="organizations.create", operation_id="organizations_create", method="POST", path="/organizations", path_params=(), scope="organizations:write", danger="write", approval=True, body=True, pagination=None),
+    "organizations.delete": OperationSpec(action="organizations.delete", operation_id="organizations_delete", method="DELETE", path="/organizations/{id}", path_params=("id",), scope="organizations:write", danger="destructive", approval=True, body=False, pagination=None),
     "organizations.domains.add": OperationSpec(action="organizations.domains.add", operation_id="organizations_domains_add", method="POST", path="/organizations/{organization_id}/domains", path_params=("organization_id",), scope="organizations:write", danger="write", approval=True, body=True, pagination=None),
     "organizations.domains.capture": OperationSpec(action="organizations.domains.capture", operation_id="organizations_domains_capture", method="PUT", path="/organizations/{organization_id}/domains/{domain_id}/capture", path_params=("organization_id", "domain_id"), scope="organizations:write", danger="critical", approval=True, body=True, pagination=None),
-    "organizations.domains.list": OperationSpec(action="organizations.domains.list", operation_id="organizations_domains_list", method="GET", path="/organizations/{organization_id}/domains", path_params=("organization_id",), scope="organizations:read", danger=None, approval=True, body=False, pagination=None),
+    "organizations.domains.list": OperationSpec(action="organizations.domains.list", operation_id="organizations_domains_list", method="GET", path="/organizations/{organization_id}/domains", path_params=("organization_id",), scope="organizations:read", danger="read", approval=True, body=False, pagination=None),
     "organizations.domains.remove": OperationSpec(action="organizations.domains.remove", operation_id="organizations_domains_remove", method="DELETE", path="/organizations/{organization_id}/domains/{domain_id}", path_params=("organization_id", "domain_id"), scope="organizations:write", danger="destructive", approval=True, body=False, pagination=None),
     "organizations.domains.verify": OperationSpec(action="organizations.domains.verify", operation_id="organizations_domains_verify", method="POST", path="/organizations/{organization_id}/domains/{domain_id}/verify", path_params=("organization_id", "domain_id"), scope="organizations:write", danger="write", approval=True, body=False, pagination=None),
-    "organizations.get": OperationSpec(action="organizations.get", operation_id="organizations_get", method="GET", path="/organizations/{id}", path_params=("id",), scope="organizations:read", danger=None, approval=True, body=False, pagination=None),
-    "organizations.list": OperationSpec(action="organizations.list", operation_id="organizations_list", method="GET", path="/organizations", path_params=(), scope="organizations:read", danger=None, approval=True, body=False, pagination="cursor"),
+    "organizations.get": OperationSpec(action="organizations.get", operation_id="organizations_get", method="GET", path="/organizations/{id}", path_params=("id",), scope="organizations:read", danger="read", approval=True, body=False, pagination=None),
+    "organizations.list": OperationSpec(action="organizations.list", operation_id="organizations_list", method="GET", path="/organizations", path_params=(), scope="organizations:read", danger="read", approval=True, body=False, pagination="cursor"),
     "organizations.portal_links.create": OperationSpec(action="organizations.portal_links.create", operation_id="organizations_portal_links_create", method="POST", path="/organizations/{organization_id}/portal-links", path_params=("organization_id",), scope="portal_links:write", danger="critical", approval=True, body=True, pagination=None),
     "organizations.portal_links.list": OperationSpec(action="organizations.portal_links.list", operation_id="organizations_portal_links_list", method="GET", path="/organizations/{organization_id}/portal-links", path_params=("organization_id",), scope="portal_links:read", danger="read", approval=True, body=False, pagination=None),
     "organizations.portal_links.revoke": OperationSpec(action="organizations.portal_links.revoke", operation_id="organizations_portal_links_revoke", method="DELETE", path="/organizations/{organization_id}/portal-links/{id}", path_params=("organization_id", "id"), scope="portal_links:write", danger="destructive", approval=True, body=False, pagination=None),
     "organizations.reactivate": OperationSpec(action="organizations.reactivate", operation_id="organizations_reactivate", method="POST", path="/organizations/{id}/reactivate", path_params=("id",), scope="organizations:write", danger="write", approval=True, body=False, pagination=None),
     "organizations.suspend": OperationSpec(action="organizations.suspend", operation_id="organizations_suspend", method="POST", path="/organizations/{id}/suspend", path_params=("id",), scope="organizations:write", danger="write", approval=True, body=False, pagination=None),
-    "organizations.transfer_ownership": OperationSpec(action="organizations.transfer_ownership", operation_id="organizations_transfer_ownership", method="POST", path="/organizations/{id}/transfer-ownership", path_params=("id",), scope="organizations:write", danger=None, approval=True, body=True, pagination=None),
-    "organizations.update": OperationSpec(action="organizations.update", operation_id="organizations_update", method="PATCH", path="/organizations/{id}", path_params=("id",), scope="organizations:write", danger=None, approval=True, body=True, pagination=None),
+    "organizations.transfer_ownership": OperationSpec(action="organizations.transfer_ownership", operation_id="organizations_transfer_ownership", method="POST", path="/organizations/{id}/transfer-ownership", path_params=("id",), scope="organizations:write", danger="critical", approval=True, body=True, pagination=None),
+    "organizations.update": OperationSpec(action="organizations.update", operation_id="organizations_update", method="PATCH", path="/organizations/{id}", path_params=("id",), scope="organizations:write", danger="write", approval=True, body=True, pagination=None),
     "permissions.create": OperationSpec(action="permissions.create", operation_id="permissions_create", method="POST", path="/permissions", path_params=(), scope="role_definitions:write", danger="write", approval=True, body=True, pagination=None),
     "permissions.delete": OperationSpec(action="permissions.delete", operation_id="permissions_delete", method="DELETE", path="/permissions/{id}", path_params=("id",), scope="role_definitions:write", danger="destructive", approval=True, body=False, pagination=None),
     "permissions.list": OperationSpec(action="permissions.list", operation_id="permissions_list", method="GET", path="/permissions", path_params=(), scope="roles:read", danger="read", approval=True, body=False, pagination="cursor"),
@@ -3179,7 +3179,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "roles.create": OperationSpec(action="roles.create", operation_id="roles_create", method="POST", path="/roles", path_params=(), scope="role_definitions:write", danger="write", approval=True, body=True, pagination=None),
     "roles.delete": OperationSpec(action="roles.delete", operation_id="roles_delete", method="DELETE", path="/roles/{id}", path_params=("id",), scope="role_definitions:write", danger="destructive", approval=True, body=False, pagination=None),
     "roles.get": OperationSpec(action="roles.get", operation_id="roles_get", method="GET", path="/roles/{id}", path_params=("id",), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
-    "roles.list": OperationSpec(action="roles.list", operation_id="roles_list", method="GET", path="/roles", path_params=(), scope="roles:read", danger=None, approval=True, body=False, pagination=None),
+    "roles.list": OperationSpec(action="roles.list", operation_id="roles_list", method="GET", path="/roles", path_params=(), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
     "roles.permissions.grant": OperationSpec(action="roles.permissions.grant", operation_id="roles_permissions_grant", method="PUT", path="/roles/{id}/permissions/{permission_id}", path_params=("id", "permission_id"), scope="role_definitions:write", danger="write", approval=True, body=False, pagination=None),
     "roles.permissions.revoke": OperationSpec(action="roles.permissions.revoke", operation_id="roles_permissions_revoke", method="DELETE", path="/roles/{id}/permissions/{permission_id}", path_params=("id", "permission_id"), scope="role_definitions:write", danger="destructive", approval=True, body=False, pagination=None),
     "roles.update": OperationSpec(action="roles.update", operation_id="roles_update", method="PATCH", path="/roles/{id}", path_params=("id",), scope="role_definitions:write", danger="write", approval=True, body=True, pagination=None),
@@ -3218,7 +3218,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "sso.domains.verify": OperationSpec(action="sso.domains.verify", operation_id="sso_domains_verify", method="POST", path="/sso/domains/{id}/verify", path_params=("id",), scope="sso:write", danger="write", approval=True, body=True, pagination=None),
     "sso.saml_metadata.import": OperationSpec(action="sso.saml_metadata.import", operation_id="sso_saml_metadata_import", method="POST", path="/sso/saml-metadata", path_params=(), scope="sso:write", danger="write", approval=True, body=True, pagination=None),
     "support_sessions.end": OperationSpec(action="support_sessions.end", operation_id="support_sessions_end", method="DELETE", path="/support-sessions/{id}", path_params=("id",), scope="support:write", danger="destructive", approval=True, body=False, pagination=None),
-    "support_sessions.start": OperationSpec(action="support_sessions.start", operation_id="support_sessions_start", method="POST", path="/support-sessions", path_params=(), scope="support:write", danger=None, approval=True, body=True, pagination=None),
+    "support_sessions.start": OperationSpec(action="support_sessions.start", operation_id="support_sessions_start", method="POST", path="/support-sessions", path_params=(), scope="support:write", danger="critical", approval=True, body=True, pagination=None),
     "token_vault.grants.create": OperationSpec(action="token_vault.grants.create", operation_id="token_vault_grants_create", method="POST", path="/token-vault/secrets/{id}/grants", path_params=("id",), scope="token_vault:write", danger="critical", approval=True, body=True, pagination=None),
     "token_vault.grants.delete": OperationSpec(action="token_vault.grants.delete", operation_id="token_vault_grants_delete", method="DELETE", path="/token-vault/secrets/{id}/grants/{client_id}", path_params=("id", "client_id"), scope="token_vault:write", danger="destructive", approval=True, body=True, pagination=None),
     "token_vault.secrets.create": OperationSpec(action="token_vault.secrets.create", operation_id="token_vault_secrets_create", method="POST", path="/token-vault/secrets", path_params=(), scope="token_vault:write", danger="write", approval=True, body=True, pagination=None),
@@ -3226,20 +3226,20 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "token_vault.secrets.list": OperationSpec(action="token_vault.secrets.list", operation_id="token_vault_secrets_list", method="GET", path="/token-vault/secrets", path_params=(), scope="token_vault:read", danger="read", approval=True, body=False, pagination="cursor"),
     "token_vault.secrets.revoke": OperationSpec(action="token_vault.secrets.revoke", operation_id="token_vault_secrets_revoke", method="POST", path="/token-vault/secrets/{id}/revoke", path_params=("id",), scope="token_vault:write", danger="destructive", approval=True, body=True, pagination=None),
     "token_vault.secrets.rotate": OperationSpec(action="token_vault.secrets.rotate", operation_id="token_vault_secrets_rotate", method="POST", path="/token-vault/secrets/{id}/rotate", path_params=("id",), scope="token_vault:write", danger="critical", approval=True, body=True, pagination=None),
-    "users.create": OperationSpec(action="users.create", operation_id="users_create", method="POST", path="/users", path_params=(), scope="users:write", danger=None, approval=True, body=True, pagination=None),
-    "users.deactivate": OperationSpec(action="users.deactivate", operation_id="users_deactivate", method="DELETE", path="/users/{id}", path_params=("id",), scope="users:write", danger=None, approval=True, body=False, pagination=None),
-    "users.environment_roles.get": OperationSpec(action="users.environment_roles.get", operation_id="users_environment_roles_get", method="GET", path="/users/{id}/environment-roles/{role_id}", path_params=("id", "role_id"), scope="roles:read", danger=None, approval=True, body=False, pagination=None),
-    "users.environment_roles.grant": OperationSpec(action="users.environment_roles.grant", operation_id="users_environment_roles_grant", method="PUT", path="/users/{id}/environment-roles/{role_id}", path_params=("id", "role_id"), scope="roles:write", danger=None, approval=True, body=False, pagination=None),
-    "users.environment_roles.list": OperationSpec(action="users.environment_roles.list", operation_id="users_environment_roles_list", method="GET", path="/users/{id}/environment-roles", path_params=("id",), scope="roles:read", danger=None, approval=True, body=False, pagination=None),
-    "users.environment_roles.revoke": OperationSpec(action="users.environment_roles.revoke", operation_id="users_environment_roles_revoke", method="DELETE", path="/users/{id}/environment-roles/{role_id}", path_params=("id", "role_id"), scope="roles:write", danger=None, approval=True, body=False, pagination=None),
+    "users.create": OperationSpec(action="users.create", operation_id="users_create", method="POST", path="/users", path_params=(), scope="users:write", danger="write", approval=True, body=True, pagination=None),
+    "users.deactivate": OperationSpec(action="users.deactivate", operation_id="users_deactivate", method="DELETE", path="/users/{id}", path_params=("id",), scope="users:write", danger="destructive", approval=True, body=False, pagination=None),
+    "users.environment_roles.get": OperationSpec(action="users.environment_roles.get", operation_id="users_environment_roles_get", method="GET", path="/users/{id}/environment-roles/{role_id}", path_params=("id", "role_id"), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
+    "users.environment_roles.grant": OperationSpec(action="users.environment_roles.grant", operation_id="users_environment_roles_grant", method="PUT", path="/users/{id}/environment-roles/{role_id}", path_params=("id", "role_id"), scope="roles:write", danger="critical", approval=True, body=False, pagination=None),
+    "users.environment_roles.list": OperationSpec(action="users.environment_roles.list", operation_id="users_environment_roles_list", method="GET", path="/users/{id}/environment-roles", path_params=("id",), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
+    "users.environment_roles.revoke": OperationSpec(action="users.environment_roles.revoke", operation_id="users_environment_roles_revoke", method="DELETE", path="/users/{id}/environment-roles/{role_id}", path_params=("id", "role_id"), scope="roles:write", danger="destructive", approval=True, body=False, pagination=None),
     "users.erase": OperationSpec(action="users.erase", operation_id="users_erase", method="POST", path="/users/{id}/erase", path_params=("id",), scope="users:erase", danger="critical", approval=True, body=False, pagination=None),
-    "users.get": OperationSpec(action="users.get", operation_id="users_get", method="GET", path="/users/{id}", path_params=("id",), scope="users:read", danger=None, approval=True, body=False, pagination=None),
-    "users.list": OperationSpec(action="users.list", operation_id="users_list", method="GET", path="/users", path_params=(), scope="users:read", danger=None, approval=True, body=False, pagination="cursor"),
+    "users.get": OperationSpec(action="users.get", operation_id="users_get", method="GET", path="/users/{id}", path_params=("id",), scope="users:read", danger="read", approval=True, body=False, pagination=None),
+    "users.list": OperationSpec(action="users.list", operation_id="users_list", method="GET", path="/users", path_params=(), scope="users:read", danger="read", approval=True, body=False, pagination="cursor"),
     "users.mfa.reset": OperationSpec(action="users.mfa.reset", operation_id="users_mfa_reset", method="DELETE", path="/users/{id}/mfa", path_params=("id",), scope="users:write", danger="critical", approval=True, body=False, pagination=None),
     "users.password.set": OperationSpec(action="users.password.set", operation_id="users_password_set", method="POST", path="/users/{id}/password", path_params=("id",), scope="users:write", danger="critical", approval=True, body=True, pagination=None),
     "users.password_reset.send": OperationSpec(action="users.password_reset.send", operation_id="users_password_reset_send", method="POST", path="/users/{id}/password-reset", path_params=("id",), scope="users:write", danger="write", approval=True, body=False, pagination=None),
     "users.reactivate": OperationSpec(action="users.reactivate", operation_id="users_reactivate", method="POST", path="/users/{id}/reactivate", path_params=("id",), scope="users:write", danger="write", approval=True, body=False, pagination=None),
-    "users.sessions.list": OperationSpec(action="users.sessions.list", operation_id="users_sessions_list", method="GET", path="/users/{id}/sessions", path_params=("id",), scope="users:read", danger=None, approval=True, body=False, pagination=None),
+    "users.sessions.list": OperationSpec(action="users.sessions.list", operation_id="users_sessions_list", method="GET", path="/users/{id}/sessions", path_params=("id",), scope="users:read", danger="read", approval=True, body=False, pagination=None),
     "users.sessions.revoke": OperationSpec(action="users.sessions.revoke", operation_id="users_sessions_revoke", method="DELETE", path="/users/{id}/sessions/{session_id}", path_params=("id", "session_id"), scope="users:write", danger="destructive", approval=True, body=False, pagination=None),
     "users.sessions.revoke_all": OperationSpec(action="users.sessions.revoke_all", operation_id="users_sessions_revoke_all", method="DELETE", path="/users/{id}/sessions", path_params=("id",), scope="users:write", danger="destructive", approval=True, body=False, pagination=None),
     "users.update": OperationSpec(action="users.update", operation_id="users_update", method="PATCH", path="/users/{id}", path_params=("id",), scope="users:write", danger="critical", approval=True, body=True, pagination=None),
@@ -3421,7 +3421,7 @@ class ApiKeysMethods:
         `status`. Never the key itself. Narrow to one app with `?client_id=`.
 
         ``GET /organizations/{organization_id}/api-keys`` · action ``api_keys.list``
-        Scope ``api_keys:read``.
+        Scope ``api_keys:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["api_keys.list"], (organization_id,), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -3444,7 +3444,7 @@ class ApiKeysMethods:
         management key as the actor.
 
         ``DELETE /api-keys/{id}`` · action ``api_keys.revoke``
-        Scope ``api_keys:write``.
+        Scope ``api_keys:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["api_keys.revoke"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -3514,8 +3514,8 @@ class ApisMethods:
         `organization_id` makes the API one organization's; left out, the environment owns
         it. Refusals are `422 invalid_api` with the reason.
 
-        ``POST /apis``
-        Scope ``apis:write``.
+        ``POST /apis`` · action ``apis.create``
+        Scope ``apis:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apis.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -3532,8 +3532,8 @@ class ApisMethods:
         Requires scope `apis:write`. Tokens already minted for it keep their `aud` until they
         expire; apps holding its scope keys keep them as plain scopes.
 
-        ``DELETE /apis/{id}``
-        Scope ``apis:write``.
+        ``DELETE /apis/{id}`` · action ``apis.delete``
+        Scope ``apis:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apis.delete"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -3549,8 +3549,8 @@ class ApisMethods:
 
         Requires scope `apis:read`.
 
-        ``GET /apis/{id}``
-        Scope ``apis:read``.
+        ``GET /apis/{id}`` · action ``apis.get``
+        Scope ``apis:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apis.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -3566,8 +3566,8 @@ class ApisMethods:
 
         Requires scope `apis:read`.
 
-        ``GET /apis``
-        Scope ``apis:read``.
+        ``GET /apis`` · action ``apis.list``
+        Scope ``apis:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apis.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -3590,8 +3590,8 @@ class ApisMethods:
         updated, scopes left out are removed. All or nothing. The identifier never changes:
         register a new API instead.
 
-        ``PATCH /apis/{id}``
-        Scope ``apis:write``.
+        ``PATCH /apis/{id}`` · action ``apis.update``
+        Scope ``apis:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apis.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -3728,7 +3728,7 @@ class AppsSecretsMethods:
         through its overlap. An app holds a handful at most, so there is no page to turn.
 
         ``GET /apps/{id}/secrets`` · action ``apps.secrets.list``
-        Scope ``apps:read``.
+        Scope ``apps:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apps.secrets.list"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -3868,7 +3868,7 @@ class AppsMethods:
         creates the same app in another environment.
 
         ``GET /apps/{id}/blueprint`` · action ``apps.blueprint``
-        Scope ``apps:read``.
+        Scope ``apps:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apps.blueprint"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -3969,7 +3969,7 @@ class AppsMethods:
         Requires scope `apps:read`. Never a secret.
 
         ``GET /apps`` · action ``apps.list``
-        Scope ``apps:read``.
+        Scope ``apps:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apps.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -4871,7 +4871,7 @@ class InvitationsMethods:
         Requires scope `invitations:read`. Pending and unexpired only.
 
         ``GET /organizations/{organization_id}/invitations`` · action ``invitations.list``
-        Scope ``invitations:read``.
+        Scope ``invitations:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["invitations.list"], (organization_id,), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -4898,7 +4898,7 @@ class InvitationsMethods:
         was accepted, withdrawn or has expired; `503 mail_failed` keeps the invitation.
 
         ``POST /organizations/{organization_id}/invitations/{invitation_id}/resend`` · action ``invitations.resend``
-        Scope ``invitations:write``.
+        Scope ``invitations:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["invitations.resend"], (organization_id, invitation_id), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -4916,7 +4916,7 @@ class InvitationsMethods:
         for it go with it. `409 not_pending` for one already accepted, withdrawn or expired.
 
         ``DELETE /organizations/{organization_id}/invitations/{invitation_id}`` · action ``invitations.revoke``
-        Scope ``invitations:write``.
+        Scope ``invitations:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["invitations.revoke"], (organization_id, invitation_id), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -4951,7 +4951,7 @@ class InvitationsMethods:
         `503 mail_failed` (nothing was created — retry).
 
         ``POST /organizations/{organization_id}/invitations`` · action ``invitations.send``
-        Scope ``invitations:write``.
+        Scope ``invitations:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["invitations.send"], (organization_id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5252,7 +5252,7 @@ class MembersRolesMethods:
         this organization cannot use), `409 role_conflict` (segregation of duties).
 
         ``PUT /organizations/{organization_id}/members/{user_id}/roles/{role_id}`` · action ``members.roles.grant``
-        Scope ``roles:write``.
+        Scope ``roles:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["members.roles.grant"], (organization_id, user_id, role_id), query, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5271,7 +5271,7 @@ class MembersRolesMethods:
         `/users/{id}/environment-roles`.
 
         ``GET /organizations/{organization_id}/members/{user_id}/roles`` · action ``members.roles.list``
-        Scope ``roles:read``.
+        Scope ``roles:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["members.roles.list"], (organization_id, user_id), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -5288,7 +5288,7 @@ class MembersRolesMethods:
         Requires scope `roles:write`. Idempotent — a role the member does not hold is a 204 too.
 
         ``DELETE /organizations/{organization_id}/members/{user_id}/roles/{role_id}`` · action ``members.roles.revoke``
-        Scope ``roles:write``.
+        Scope ``roles:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["members.roles.revoke"], (organization_id, user_id, role_id), query, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5327,7 +5327,7 @@ class MembersMethods:
         the role with `PATCH`.
 
         ``POST /organizations/{organization_id}/members`` · action ``members.add``
-        Scope ``members:write``.
+        Scope ``members:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["members.add"], (organization_id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5344,7 +5344,7 @@ class MembersMethods:
         Requires scope `members:read`. Every membership, whatever its status, oldest first.
 
         ``GET /organizations/{organization_id}/members`` · action ``members.list``
-        Scope ``members:read``.
+        Scope ``members:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["members.list"], (organization_id,), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -5366,7 +5366,7 @@ class MembersMethods:
         membership. Removing the only owner is refused with `409 last_owner`.
 
         ``DELETE /organizations/{organization_id}/members/{user_id}`` · action ``members.remove``
-        Scope ``members:write``.
+        Scope ``members:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["members.remove"], (organization_id, user_id), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5384,7 +5384,7 @@ class MembersMethods:
         owner is refused with `409 last_owner` — transfer ownership first.
 
         ``PATCH /organizations/{organization_id}/members/{user_id}`` · action ``members.update``
-        Scope ``members:write``.
+        Scope ``members:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["members.update"], (organization_id, user_id), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5443,7 +5443,7 @@ class OrganizationsDomainsMethods:
         that proves it (`record_name`, `record_value`). A handful at most; not paged.
 
         ``GET /organizations/{organization_id}/domains`` · action ``organizations.domains.list``
-        Scope ``organizations:read``.
+        Scope ``organizations:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["organizations.domains.list"], (organization_id,), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -5565,7 +5565,7 @@ class OrganizationsMethods:
         Requires scope `organizations:write`.
 
         ``POST /organizations`` · action ``organizations.create``
-        Scope ``organizations:write``.
+        Scope ``organizations:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["organizations.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5588,7 +5588,7 @@ class OrganizationsMethods:
         projects on this platform (a platform customer, not a tenant of your app).
 
         ``DELETE /organizations/{id}`` · action ``organizations.delete``
-        Scope ``organizations:write``.
+        Scope ``organizations:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["organizations.delete"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5605,7 +5605,7 @@ class OrganizationsMethods:
         Requires scope `organizations:read`.
 
         ``GET /organizations/{id}`` · action ``organizations.get``
-        Scope ``organizations:read``.
+        Scope ``organizations:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["organizations.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -5623,7 +5623,7 @@ class OrganizationsMethods:
         with `q` (a fragment of the name or slug) or `status`.
 
         ``GET /organizations`` · action ``organizations.list``
-        Scope ``organizations:read``.
+        Scope ``organizations:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["organizations.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -5684,7 +5684,7 @@ class OrganizationsMethods:
         Refusals: `422 not_a_member`, `409 not_active`, `409 already_owner`.
 
         ``POST /organizations/{id}/transfer-ownership`` · action ``organizations.transfer_ownership``
-        Scope ``organizations:write``.
+        Scope ``organizations:write`` · danger: critical.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["organizations.transfer_ownership"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -5704,7 +5704,7 @@ class OrganizationsMethods:
         organization's trail as `organization.renamed`, with the values before and after.
 
         ``PATCH /organizations/{id}`` · action ``organizations.update``
-        Scope ``organizations:write``.
+        Scope ``organizations:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["organizations.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -6014,7 +6014,7 @@ class RolesMethods:
         app's roles; `?organization_id=` to what can be granted in that organization.
 
         ``GET /roles`` · action ``roles.list``
-        Scope ``roles:read``.
+        Scope ``roles:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["roles.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -6784,7 +6784,7 @@ class SupportSessionsMethods:
         one token and are refused before the session starts (`422 invalid_target`).
 
         ``POST /support-sessions`` · action ``support_sessions.start``
-        Scope ``support:write``.
+        Scope ``support:write`` · danger: critical.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["support_sessions.start"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -6954,7 +6954,7 @@ class UsersEnvironmentRolesMethods:
         Requires scope `roles:read`. `200` with the grant, or `404` when it is not held.
 
         ``GET /users/{id}/environment-roles/{role_id}`` · action ``users.environment_roles.get``
-        Scope ``roles:read``.
+        Scope ``roles:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.environment_roles.get"], (id, role_id), query, approval=approval, approval_id=approval_id, headers=headers)
@@ -6976,7 +6976,7 @@ class UsersEnvironmentRolesMethods:
         person belongs to with `409 role_conflict`.
 
         ``PUT /users/{id}/environment-roles/{role_id}`` · action ``users.environment_roles.grant``
-        Scope ``roles:write``.
+        Scope ``roles:write`` · danger: critical.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.environment_roles.grant"], (id, role_id), query, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -6993,7 +6993,7 @@ class UsersEnvironmentRolesMethods:
         Requires scope `roles:read`.
 
         ``GET /users/{id}/environment-roles`` · action ``users.environment_roles.list``
-        Scope ``roles:read``.
+        Scope ``roles:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.environment_roles.list"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -7010,7 +7010,7 @@ class UsersEnvironmentRolesMethods:
         Requires scope `roles:write`. Idempotent.
 
         ``DELETE /users/{id}/environment-roles/{role_id}`` · action ``users.environment_roles.revoke``
-        Scope ``roles:write``.
+        Scope ``roles:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.environment_roles.revoke"], (id, role_id), query, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -7108,7 +7108,7 @@ class UsersSessionsMethods:
         `impersonation` marks a session somebody else opened as this person.
 
         ``GET /users/{id}/sessions`` · action ``users.sessions.list``
-        Scope ``users:read``.
+        Scope ``users:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.sessions.list"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -7196,7 +7196,7 @@ class UsersMethods:
         Requires scope `users:write`. Password is optional — omit it to create a passwordless identity the user completes via an invite/magic-link.
 
         ``POST /users`` · action ``users.create``
-        Scope ``users:write``.
+        Scope ``users:write`` · danger: write.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -7216,7 +7216,7 @@ class UsersMethods:
         `disabled` state. Idempotent. The console's "Deactivate" is this action.
 
         ``DELETE /users/{id}`` · action ``users.deactivate``
-        Scope ``users:write``.
+        Scope ``users:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.deactivate"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
@@ -7250,7 +7250,7 @@ class UsersMethods:
         Requires scope `users:read`.
 
         ``GET /users/{id}`` · action ``users.get``
-        Scope ``users:read``.
+        Scope ``users:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
@@ -7269,7 +7269,7 @@ class UsersMethods:
         of the address or the name) and `status`. Filters combine.
 
         ``GET /users`` · action ``users.list``
-        Scope ``users:read``.
+        Scope ``users:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["users.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
