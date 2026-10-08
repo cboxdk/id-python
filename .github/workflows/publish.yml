@@ -1,0 +1,48 @@
+name: publish
+
+# Publishes cbox-id-client to PyPI when a GitHub release is published.
+#
+# Trusted Publishing (OIDC): no API token is stored anywhere. PyPI trusts this exact
+# repository + workflow + environment, configured once on pypi.org under
+# "Publishing" (owner cboxdk, repository id-python, workflow publish.yml, environment pypi).
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      # The tag is the version: a release tagged v0.10.0 must build 0.10.0, or nothing ships.
+      - name: Tag matches the package version
+        run: |
+          version=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "v${version}" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != pyproject version ${version}"; exit 1; }
+      - run: pip install -e ".[dev]" build
+      - run: ruff check .
+      - run: mypy
+      - run: pytest -q
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/cbox-id-client
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

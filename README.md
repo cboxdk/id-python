@@ -88,13 +88,13 @@ request abstraction invented to avoid them.
 > Register an application in your environment console — see
 > [Integrate your app](https://github.com/cboxdk/cbox-id/blob/main/docs/getting-started/integrate-your-app.md).
 
-> **Not on PyPI, and not planned.** `pip install cbox-id-client` installs nothing — this
-> package has never been published and there is no release pipeline for it. Everything
-> below works; you install it from source.
-
 ```bash
-pip install git+https://github.com/cboxdk/id-python@v0.9.0
+pip install cbox-id-client
 ```
+
+Published to PyPI from 0.10.0, by the release workflow (Trusted Publishing — no stored
+token). Earlier versions were never on PyPI; install those from the tag instead:
+`pip install git+https://github.com/cboxdk/id-python@v0.9.0`.
 
 ## Log in users
 
