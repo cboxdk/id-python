@@ -345,6 +345,219 @@ ok = verify_webhook(
 )
 ```
 
+## Management API
+
+`cbox_id.management` is a typed client for Cbox ID's management planes. It is generated from
+the OpenAPI documents the server publishes, so every method, path, scope and type matches the
+server it was generated from. Use it from server code only: every client holds a management
+credential.
+
+| Client | Plane | Credential | `base_url` |
+| --- | --- | --- | --- |
+| `EnvironmentClient` | One environment's tenancy: organizations, users, apps, roles, SSO, audit logs… | `cbid_env_…` key, or a delegated access token | The environment's own host, or the platform root with `environment` |
+| `WorkspaceClient` | The workspace above its environments: projects, environments, team, keys | `cbid_ws_…` key, or a person's root token | `https://api.cboxid.com` (default) |
+| `PlatformClient` | The deployment itself, for operators | Delegated operator token only | `https://api.cboxid.com` (default) |
+| `AccountClient` | A person's own account | Delegated token only | The environment's own host |
+
+Method names are the server's action names: `apps.secrets.rotate` is
+`env.apps.secrets.rotate(...)`, and `sso.saml_metadata.import` is
+`env.sso.saml_metadata.import_(...)`. Path parameters come first, in path order, then the body
+(or the query, for a read) as a dict, then keyword-only options. Every call returns an
+`ApiResponse` with `data`, `meta`, `body`, `status`, `replayed`, `idempotency_key`,
+`request_id` and `headers`. Bodies, queries and `data` are `TypedDict`s, so mypy and your
+editor check the keys.
+
+The client is synchronous, on `httpx`, like the rest of this package.
+
+### Create an app and rotate its secret
+
+```python
+import os
+
+from cbox_id.management import ApprovalDeniedError, CboxIdApiError, EnvironmentClient
+
+env = EnvironmentClient(
+    base_url="https://acme.cboxid.com",
+    api_key=os.environ["CBOX_ID_ENV_KEY"],  # cbid_env_…
+    on_approval_required=lambda approval, ctx: print(
+        f"Approve {ctx.action} on your device. Code: {approval.binding_code}"
+    ),
+)
+
+app = env.apps.create(
+    {"name": "Billing", "type": "web", "redirect_uris": ["https://billing.acme.com/callback"]}
+).data
+# app["client_secret"] is in this response and in no other. Store it now.
+
+try:
+    secret = env.apps.secrets.rotate(app["id"], {"grace_seconds": 3600}).data
+    # secret["client_secret"]: the new secret, shown once.
+except ApprovalDeniedError:
+    print("Rotation was declined.")
+except CboxIdApiError as exc:
+    if not exc.is_validation_error:
+        raise
+    print(exc.errors)
+```
+
+When a key's policy holds an action for a person's approval, the server answers
+`202 approval_required`. By default the client calls `on_approval_required` (show the
+`binding_code` so the person can match it on their device), polls the approval, and repeats
+the request with `Cbox-Approval: <id>` and the same `Idempotency-Key` once it is approved.
+`ApprovalDeniedError` and `ApprovalExpiredError` are raised when it is denied or expires. The
+poll goes only to the plane's own host: a `poll_url` on another origin is refused rather than
+handed the credential. If you do not want to wait in the same call, pass `approval="return"`:
+
+```python
+from cbox_id.management import PendingApprovalResult
+
+outcome = env.apps.secrets.rotate(app["id"], {"grace_seconds": 0}, approval="return")
+if isinstance(outcome, PendingApprovalResult):
+    print(f"Code: {outcome.approval.binding_code}")
+    secret = outcome.resume().data  # polls, then repeats the request
+```
+
+### Bootstrap an environment from a workspace key
+
+```python
+from cbox_id.management import EnvironmentClient, WorkspaceClient
+
+workspace = WorkspaceClient(api_key=os.environ["CBOX_ID_WS_KEY"])  # cbid_ws_…
+
+created = workspace.environments.create(
+    {
+        "name": "Staging",
+        "type": "sandbox",
+        "initial_key": {"name": "bootstrap", "scopes": ["apps:write", "organizations:write"]},
+    }
+).data
+
+# The first management key, returned once. On an idempotent replay its token is None.
+initial_key = created["initial_key"]
+assert initial_key is not None and initial_key["token"] is not None
+env = EnvironmentClient(base_url=created["issuer"], api_key=initial_key["token"])
+env.organizations.create({"name": "Acme", "slug": "acme"})
+```
+
+### Idempotency, retries and errors
+
+- Every `POST`, `PUT`, `PATCH` and `DELETE` sends an `Idempotency-Key`, a fresh UUID unless
+  you pass `idempotency_key=`. Network failures, `5xx`, `429` and
+  `409 idempotency_in_progress` are retried with the **same** key
+  (`retry=RetryOptions(max_retries=3, base_delay=0.5, max_delay=30.0)`, in seconds).
+  `Retry-After` is respected; one longer than `max_delay` is raised instead of waited out.
+  `replayed` is `True` when the server returned the first request's stored answer
+  (`Idempotent-Replayed`). A secret in a replayed answer is `None`.
+- A failed call raises `CboxIdApiError` with `status`, `error` (the stable code), `message`,
+  `errors` (field-keyed, on `validation_failed`), `request_id` (the envelope's `request_id`,
+  else the `X-Request-Id` header; quote it when reporting a problem) and `retry_after`. A call
+  that never got an answer raises `ManagementNetworkError`, which carries the
+  `idempotency_key` so you can repeat the request safely. Both are `CboxIdError`s.
+- The client never logs. Secrets in responses are returned as they arrive, and request
+  bodies are never put in an error.
+
+### One token for every environment
+
+A person's access token issued at the platform root reaches the workspace, account and
+operator planes there, and any environment of their workspace when the request names it with
+`Cbox-Environment`. Pass `environment` (an id or slug) and the root host as `base_url`:
+
+```python
+staging = EnvironmentClient(
+    base_url="https://api.cboxid.com",
+    access_token=tokens.current,  # a str, or a callable called before every request
+    environment="acme-staging",  # sent as Cbox-Environment on every request
+)
+staging.organizations.portal_links.create(org_id, {"intents": ["sso", "dsync"]})
+```
+
+What the token may do there is bounded by the person's role and the token's scopes. A
+`cbid_env_…` key is bound to its own environment's host, so `environment` is refused with one.
+
+### Lists
+
+Every paged list also has a `…_all` variant that iterates every item, fetching pages as you
+reach them. It follows `meta.next_cursor` on the environment plane and `meta.next_page` on the
+workspace plane:
+
+```python
+for org in env.organizations.list_all({"limit": 100}):
+    print(org["id"], org["name"])
+```
+
+### Audit Logs
+
+Your app records what its users did, per organization (your customer), and Cbox ID keeps
+each organization's events in a tamper-evident hash chain. `AuditLogger` buffers events and
+sends them in batches of up to 100, each batch under its own `Idempotency-Key`. It sends a
+batch when it is full, every `flush_interval` seconds (default 5, from a daemon thread), and on
+`flush()` / `close()`. A batch that fails stays queued with the same key, so sending it again
+never records an event twice:
+
+```python
+from collections.abc import Sequence
+
+from cbox_id.management import AuditLogEventInput, AuditLogger
+
+def report(exc: Exception, batch: Sequence[AuditLogEventInput]) -> None:
+    log.warning("audit flush failed (%d events kept for the next one): %s", len(batch), exc)
+
+
+with AuditLogger(env, on_error=report) as audit:
+    audit.record(
+        {
+            "organization_id": org["id"],
+            "action": "invoice.voided",
+            "actor": {"id": user.id, "type": "user", "name": user.name},
+            "targets": [{"id": invoice.id, "type": "invoice"}],
+            "context": {"location": request.remote_addr, "user_agent": request.user_agent.string},
+            "metadata": {"reason": "duplicate"},
+        }
+    )  # occurred_at defaults to now
+# Leaving the block (or audit.close()) stops the thread and sends what is left.
+```
+
+Read events with `env.audit_logs.events.list_all({"organization_id": …, "actions": […]})`.
+To get a CSV, `export_audit_logs(env, filters)` starts an export and polls it until it is
+ready. Its `url` is signed and short-lived. To check the chain yourself instead of trusting
+the server's `env.audit_logs.verify()`, call `verify_audit_log_chain(env, organization_id)` or
+`verify_audit_chain(events)`. They recompute `sha256(prev_hash + canonical JSON)` exactly as
+the server does — keys sorted by UTF-8 bytes at every depth, PHP's list and empty-object
+rules, PHP's float format, slashes and Unicode unescaped — and report
+`AuditChainVerification(valid, reason, broken_at_sequence, …)`.
+
+### Delegated tokens and DPoP
+
+Pass `access_token` (a string, or a callable called before every request so it can refresh)
+instead of `api_key`. For a DPoP-bound token, pass a signer built from the P-256 key the token
+was bound to:
+
+```python
+from cbox_id.management import AccountClient, ES256DPoPSigner
+
+me = AccountClient(
+    base_url="https://acme.cboxid.com",
+    access_token=tokens.current,
+    dpop=ES256DPoPSigner(private_key),  # an EllipticCurvePrivateKey (cryptography)
+)
+me.sessions.revoke_others()
+```
+
+### Types, metadata and regenerating
+
+Schema and operation types live in each plane's module (`cbox_id.management.environment_api.App`,
+`cbox_id.management.workspace_api.EnvironmentsCreateBody`). The operation tables
+(`ENVIRONMENT_OPERATIONS`, …) list each action's method, path, scope, danger and whether it can
+be held for approval, which is useful for showing a confirmation before a `critical` action.
+`env.request(method, path, query=…, body=…)` calls a route that is not generated.
+
+The specs are vendored in `openapi/`. `python -m scripts.generate_management` (with the `dev`
+extra installed) regenerates `src/cbox_id/management/generated/` from them, and
+`python -m scripts.generate_management --fetch environment=https://acme.cboxid.com` (or
+`workspace=`, `platform=`, `account=`, `all=`) refreshes a vendored spec from a running server
+first. `--check` exits non-zero when the generated code is stale, and the test suite fails
+when the generated code and the vendored specs disagree.
+
 ## Security & scope
 
 Login is hardened by default — PKCE, `state`, nonce, and full `id_token` verification
@@ -353,9 +566,9 @@ so `alg:none` and algorithm confusion are both refused. Keep the
 client secret and webhook secrets server-side.
 
 This is a **client**. It authenticates users — into a chosen organization, when you ask —
-and calls a Cbox ID instance's standard endpoints; it does not configure SSO, run SCIM, or
-administer organizations and their members — those are platform capabilities of
-[`cboxdk/laravel-id`](https://github.com/cboxdk/laravel-id).
+and calls a Cbox ID instance's endpoints. The management client drives the server's own
+management API with a credential you hold; SSO, SCIM and the rules behind every action stay
+platform capabilities of [`cboxdk/laravel-id`](https://github.com/cboxdk/laravel-id).
 
 Report vulnerabilities via this repo's GitHub **Private Vulnerability Reporting**.
 

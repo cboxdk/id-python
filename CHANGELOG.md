@@ -3,6 +3,50 @@
 All notable changes to `cbox-id-client` are recorded here. Earlier releases are described
 by their tags and commit history.
 
+## [Unreleased]
+
+### Added
+
+- `cbox_id.management`: typed clients for Cbox ID's management planes, generated from the
+  OpenAPI documents the server publishes. `EnvironmentClient` (an environment's own host,
+  `cbid_env_…` key or delegated token), `WorkspaceClient` (`cbid_ws_…` key),
+  `PlatformClient` (operator token) and `AccountClient` (a person's own token). Methods are
+  named after the server's actions (`env.apps.secrets.rotate(id, body)`,
+  `workspace.environments.create(body)`), with `TypedDict` bodies, queries and responses
+  that pass `mypy --strict`. Synchronous, on `httpx`, like the rest of the package.
+- Every write sends an `Idempotency-Key` (a fresh UUID unless you pass one) and is retried
+  with the same key on network failures, `5xx`, `429` and `409 idempotency_in_progress`,
+  respecting `Retry-After`. `ApiResponse.replayed` reports `Idempotent-Replayed`.
+- Approvals: a `202 approval_required` calls `on_approval_required` (show the binding code),
+  polls the approval on the plane's own host only, and repeats the request with
+  `Cbox-Approval` and the same key. `ApprovalDeniedError` and `ApprovalExpiredError` when it
+  is not approved; `approval="return"` hands back a `PendingApprovalResult` with `resume()`.
+- `CboxIdApiError` (`status`, `error`, `message`, `errors`, `request_id` from the envelope's
+  `request_id` or `X-Request-Id`, `retry_after`) and `ManagementNetworkError` (with the
+  `idempotency_key` to repeat safely).
+- `environment=` on `EnvironmentClient`: with a person's root access token and the platform
+  root as `base_url`, it sends `Cbox-Environment` so one token can drive any environment of
+  the workspace.
+- Audit Logs helpers: `AuditLogger` (buffers events and sends batches of up to 100, each
+  with its own Idempotency-Key, on size, interval and `flush()`), `export_audit_logs()`
+  (creates an export and polls it until ready), and `verify_audit_chain()` /
+  `verify_audit_log_chain()` with `canonical_json()` and `audit_event_hash()`, which
+  recompute an organization's hash chain byte for byte as the server does — checked against
+  a vector the server's own code computed.
+- `…_all` iterators on every paged list (cursor and page-number paging).
+- DPoP-bound access tokens: `ES256DPoPSigner` and `generate_dpop_key()`, with
+  `DPoP-Nonce` challenge handling.
+- Operation tables (`ENVIRONMENT_OPERATIONS`, …) with each action's method, path, scope,
+  danger and whether it can be held for approval.
+- `python -m scripts.generate_management` regenerates the clients from the vendored specs in
+  `openapi/`; `--fetch <plane>=<host>` refreshes a spec from a running server first, and
+  `--check` fails when the generated code is stale. So does the test suite.
+
+### Changed
+
+- New runtime dependency: `typing-extensions>=4.7` (`NotRequired` and `TypedDict` on
+  Python 3.10). The `dev` extra adds `pyyaml` and `types-PyYAML` for the generator.
+
 ## [0.9.0] - 2026-09-24
 
 Organization selection, support sessions, and staff roles. Needs a Cbox ID instance that
