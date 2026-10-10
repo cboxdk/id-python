@@ -650,6 +650,22 @@ class Generator:
                     response_schema = schema if isinstance(schema, dict) else None
                     break
 
+                # An action whose own answer is `202 Accepted` documents it as `oneOf` its body
+                # and the approval body. The branch that is not the approval is the result.
+                if "202" in responses and not {"200", "201", "204"} & responses.keys():
+                    accepted = self.deref(responses["202"], "responses")
+                    accepted_json = obj(accepted.get("content")).get("application/json")
+                    accepted_schema = (
+                        obj(accepted_json.get("schema")) if isinstance(accepted_json, dict) else {}
+                    )
+                    own = [
+                        branch
+                        for branch in arr(accepted_schema.get("oneOf"))
+                        if isinstance(branch, dict)
+                        and "approval_required" not in json.dumps(branch)
+                    ]
+                    response_schema = own[0] if own else None
+
                 query_names = {p.get("name") for p in query}
                 name = action.split(".") if action is not None else self.derived_name(method, path)
 
@@ -689,15 +705,6 @@ class Generator:
         if actions and all(o.name[0] == self.config.plane and len(o.name) > 2 for o in actions):
             for o in actions:
                 o.name = o.name[1:]
-
-        # An action can be both a method and the namespace of another: `fga.check` and
-        # `fga.check.batch`. A member cannot be both, so the deeper one folds its last two
-        # segments together — `fga.check_batch()` next to `fga.check()`.
-        leaves = {".".join(o.name) for o in ops}
-
-        for o in ops:
-            while len(o.name) > 2 and ".".join(o.name[:-1]) in leaves:
-                o.name = [*o.name[:-2], f"{o.name[-2]}_{o.name[-1]}"]
 
         for o in ops:
             o.name = [identifier(segment) for segment in o.name]

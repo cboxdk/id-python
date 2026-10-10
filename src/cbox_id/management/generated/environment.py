@@ -4186,7 +4186,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "feature_flags.list": OperationSpec(action="feature_flags.list", operation_id="feature_flags_list", method="GET", path="/feature-flags", path_params=(), scope="feature_flags:read", danger="read", approval=True, body=False, pagination="cursor"),
     "feature_flags.update": OperationSpec(action="feature_flags.update", operation_id="feature_flags_update", method="PATCH", path="/feature-flags/{id}", path_params=("id",), scope="feature_flags:write", danger="write", approval=True, body=True, pagination=None),
     "fga.check": OperationSpec(action="fga.check", operation_id="fga_check", method="GET", path="/fga/check", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination=None),
-    "fga.check.batch": OperationSpec(action="fga.check.batch", operation_id="fga_check_batch", method="GET", path="/fga/check/batch", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination=None),
+    "fga.check_batch": OperationSpec(action="fga.check_batch", operation_id="fga_check_batch", method="GET", path="/fga/check/batch", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination=None),
     "fga.resources.list": OperationSpec(action="fga.resources.list", operation_id="fga_resources_list", method="GET", path="/fga/resources", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination="cursor"),
     "fga.schema.get": OperationSpec(action="fga.schema.get", operation_id="fga_schema_get", method="GET", path="/fga/schema", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination=None),
     "fga.schema.update": OperationSpec(action="fga.schema.update", operation_id="fga_schema_update", method="PUT", path="/fga/schema", path_params=(), scope="fga:schema", danger="critical", approval=True, body=True, pagination=None),
@@ -5737,12 +5737,12 @@ class DirectoriesMethods:
         return self._core.paginate(ENVIRONMENT_OPERATIONS["directories.list"], (), query, headers=headers)
 
     @overload
-    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory]: ...
 
     @overload
-    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]: ...
 
-    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]:
         """Pull a Google Workspace, Microsoft Entra or HR-system directory now, on a worker. `full` asks an HR system for everybody rather than what changed.
 
         Requires scope `directory_sync:write`. Danger: write.
@@ -6201,11 +6201,11 @@ class FgaMethods:
 
         Requires scope `fga:read`. Danger: read.
 
-        ``GET /fga/check/batch`` · action ``fga.check.batch``
+        ``GET /fga/check/batch`` · action ``fga.check_batch``
         Scope ``fga:read`` · danger: read.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(ENVIRONMENT_OPERATIONS["fga.check.batch"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.check_batch"], (), query, approval=approval, approval_id=approval_id, headers=headers)
 
 
 class FrontendKeysMethods:

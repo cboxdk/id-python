@@ -211,3 +211,14 @@ def test_fga_tuple_refuses_what_the_notation_cannot_carry(
                 "subject": {"type": "user", "id": subject_id},
             }
         )
+
+
+def test_an_action_that_answers_202_returns_its_own_body() -> None:
+    directory = {"id": "dir_1", "name": "Workday"}
+    fake = FakeApi(json_response({"data": directory}, 202))
+
+    result = env_client(fake).directories.sync("dir_1", {"full": True})
+
+    assert len(fake.calls) == 1
+    assert result.status == 202
+    assert result.data["id"] == "dir_1"

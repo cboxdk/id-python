@@ -65,7 +65,7 @@ environment.directories.delete(id, body=, *, approval=, idempotency_key=, approv
 environment.directories.get(id, query=, *, approval=, approval_id=, headers=) -> ApiResponse[Directory] | PendingApprovalResult[Directory]
 environment.directories.list(query=, *, approval=, approval_id=, headers=) -> ApiResponse[DirectoriesListData] | PendingApprovalResult[DirectoriesListData]
 environment.directories.list_all(query=, *, headers=) -> Iterator[Directory]
-environment.directories.sync(id, body=, *, approval=, idempotency_key=, approval_id=, headers=) -> ApiResponse[None] | PendingApprovalResult[None]
+environment.directories.sync(id, body=, *, approval=, idempotency_key=, approval_id=, headers=) -> ApiResponse[Directory] | PendingApprovalResult[Directory]
 environment.directories.update(id, body, *, approval=, idempotency_key=, approval_id=, headers=) -> ApiResponse[Directory] | PendingApprovalResult[Directory]
 environment.directories.credentials.replace(id, body, *, approval=, idempotency_key=, approval_id=, headers=) -> ApiResponse[Directory] | PendingApprovalResult[Directory]
 environment.directories.groups.list(id, query=, *, approval=, approval_id=, headers=) -> ApiResponse[DirectoriesGroupsListData] | PendingApprovalResult[DirectoriesGroupsListData]

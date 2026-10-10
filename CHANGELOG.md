@@ -34,8 +34,8 @@ reads as absent and the new endpoints answer 404.
 
 ### Changed
 
-- The generator folds an action that is also another action's namespace into its parent
-  (`fga.check.batch` becomes `fga.check_batch()` next to `fga.check()`).
+- The generator reads an action's own `202 Accepted` body (documented as `oneOf` it and the
+  approval body), so `env.directories.sync()` now returns the directory.
 
 ## [0.10.0] - 2026-10-08
 
