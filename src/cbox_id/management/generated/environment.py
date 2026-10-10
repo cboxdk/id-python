@@ -625,6 +625,31 @@ class SignInRules(TypedDict):
     #: Failed attempts before a lockout; null for none.
     lockout_threshold: int | None
 
+    #: Environment-wide. Whether passkeys may be used to sign in and be added. An organization's override never changes it.
+    passkeys: bool
+
+    #: Environment-wide. Whether a one-time sign-in link may be emailed.
+    magic_link: bool
+
+    #: Environment-wide. Minutes of inactivity before a session ends; null for the deployment's.
+    session_idle_minutes: int | None
+
+    #: Environment-wide. Minutes a session lasts at most; null for the deployment's.
+    session_absolute_minutes: int | None
+
+    #: Environment-wide. Whether a sign-up Radar flags is challenged with Turnstile, where the deployment has keys.
+    bot_challenge: bool
+
+
+class SignInMethodsInForce(TypedDict):
+    passkeys: bool
+    magic_link: bool
+
+    #: 0 for no idle timeout.
+    session_idle_minutes: int
+    session_absolute_minutes: int
+    bot_challenge: bool
+
 
 class SignInPolicy(TypedDict):
     #: null for the environment baseline.
@@ -640,12 +665,27 @@ class SignInPolicy(TypedDict):
     #: True for an organization with no override of its own.
     inheriting: bool
 
+    #: The environment-wide methods and session lengths actually in force, after the deployment's ceiling.
+    in_force: SignInMethodsInForce
+
+    #: The deployment's ceiling: which methods it offers at all, the longest sessions it allows, and whether it has Turnstile keys.
+    deployment: SignInMethodsInForce
+
 
 class SocialProvider(TypedDict):
-    """Its client secret and private key are write-only and never returned."""
+    """Its client secret and private key are write-only and never returned. An environment provider (`level: environment`) is offered on every organization's sign-in page unless the organization has its own for the same provider or turned it off."""
 
     id: str
+
+    #: null for the environment's own provider.
     organization_id: str | None
+    level: Literal["environment", "organization"]
+
+    #: False when it is turned off; its credentials are kept.
+    enabled: bool
+
+    #: Extra scopes requested on top of the ones sign-in needs.
+    scopes: list[str]
 
     #: The catalogue key: google, github, apple…
     provider: str | None
@@ -656,6 +696,28 @@ class SocialProvider(TypedDict):
     #: The redirect URI to register with the provider.
     callback_uri: str
     created_at: NotRequired[str | None]
+
+
+class OfferedSocialProvidersProvidersItem(TypedDict):
+    id: str
+    provider: str | None
+    name: str
+
+    #: `environment` when inherited; `organization` when the organization's own stands in its place.
+    source: Literal["environment", "organization"]
+    callback_uri: str
+
+
+class OfferedSocialProviders(TypedDict):
+    """The social login buttons one sign-in page shows, after inheritance."""
+
+
+    #: null for the plain sign-in page, before anybody has said who they are.
+    organization_id: str | None
+    providers: list[OfferedSocialProvidersProvidersItem]
+
+    #: The environment's providers this organization turned off for its page.
+    not_inherited: list[str]
 
 
 class FrontendKey(TypedDict):
@@ -765,7 +827,15 @@ class Appearance(TypedDict):
     #: Whether this level has a theme of its own.
     customized: bool
     theme: AppearanceTheme
+
+    #: The uploaded logo, served by this application at /brand-assets/…; null when none is uploaded at this level. Never a remote URL.
     logo: str | None
+
+    #: The uploaded favicon, served the same way; null when none.
+    favicon: str | None
+
+    #: A remote logo URL saved before logos became uploads is still stored at this level. It is never fetched and no longer shown on any hosted page; upload a logo (or send `logo: null`) to clear it.
+    remote_logo_ignored: bool
 
 
 class WhitelabelBranding(TypedDict):
@@ -776,10 +846,10 @@ class WhitelabelBranding(TypedDict):
     email_from_name: str | None
     email_template: str | None
 
-    #: Uploaded from the console.
+    #: Uploaded with `PUT /branding/appearance` (the console's Branding page).
     logo_url: str | None
 
-    #: Uploaded from the console.
+    #: Uploaded with `PUT /branding/appearance` (the console's Branding page).
     favicon_url: str | None
 
 
@@ -2110,7 +2180,7 @@ class BrandingAppearanceSetBodyTheme(TypedDict):
     #: Corner radius: 0rem, 0.25rem, 0.375rem, 0.5rem, 0.75rem, 1rem.
     radius: NotRequired[str]
 
-    #: Type family: system, geometric, serif.
+    #: Type family: system, inter, geometric, rounded, serif.
     font: NotRequired[str]
 
     #: Colours as #rrggbb. One left out takes the preset's.
@@ -2127,8 +2197,11 @@ class BrandingAppearanceSetBody(TypedDict):
     #: The theme. Both modes must be readable: text needs 4.5:1 against the background, muted text 3:1.
     theme: BrandingAppearanceSetBodyTheme
 
-    #: An https URL for the logo; null removes it, left out keeps it.
+    #: The logo as a base64 data: URI (data:image/png;base64,…): PNG, JPEG or WebP, at most 1024 KB and 4096px on the longest side. SVG and remote URLs are refused. Null removes it; left out keeps it.
     logo: NotRequired[str | None]
+
+    #: The favicon as a base64 data: URI (data:image/png;base64,…): PNG, ICO or WebP, at most 256 KB and 1024px on the longest side. SVG and remote URLs are refused. Null removes it; left out keeps it.
+    favicon: NotRequired[str | None]
 
 
 class BrandingWhitelabelGetQuery(TypedDict):
@@ -3592,6 +3665,21 @@ class SigninPolicyUpdateBody(TypedDict):
     #: Failed attempts before an account is locked; null for the deployment default (10 inside 15 minutes unless CBOX_ID_LOCKOUT_THRESHOLD says otherwise).
     lockout_threshold: NotRequired[int | None]
 
+    #: Environment only. Whether people may sign in with a passkey, and add one. Off at the deployment (CBOX_ID_PASSKEYS_ENABLED=false) stays off.
+    passkeys: NotRequired[bool]
+
+    #: Environment only. Whether a one-time sign-in link may be emailed. Off at the deployment (CBOX_ID_MAGIC_LINK_ENABLED=false) stays off.
+    magic_link: NotRequired[bool]
+
+    #: Environment only. Minutes of inactivity before a session ends; null for the deployment's. No more than the deployment allows (CBOX_ID_SESSION_IDLE_MINUTES).
+    session_idle_minutes: NotRequired[int | None]
+
+    #: Environment only. Minutes a session lasts at most, however active; null for the deployment's. No more than the deployment allows (CBOX_ID_SESSION_TTL_MINUTES).
+    session_absolute_minutes: NotRequired[int | None]
+
+    #: Environment only. Whether a sign-up Radar flags is asked to prove it is a person (Cloudflare Turnstile). Has no effect where the deployment has no Turnstile keys.
+    bot_challenge: NotRequired[bool]
+
 
 class SigninSelfServiceSignupSetBody(TypedDict):
     #: On: anyone may create an account and their own organization. Off: people join by invitation.
@@ -3614,9 +3702,30 @@ class SigninSocialDeleteBody(TypedDict):
     organization_id: NotRequired[str | None]
 
 
+class SigninSocialDisableBody(TypedDict):
+    #: Only if it is this organization's; anything else is a 404.
+    organization_id: NotRequired[str | None]
+
+
+class SigninSocialEnableBody(TypedDict):
+    #: Only if it is this organization's; anything else is a 404.
+    organization_id: NotRequired[str | None]
+
+
+class SigninSocialInheritBody(TypedDict):
+    #: The organization whose sign-in page this is about.
+    organization_id: str
+
+    #: False to stop offering the environment's provider on this organization's page; true to offer it again.
+    offered: bool
+
+
 class SigninSocialListQuery(TypedDict):
-    #: Only this organization's providers.
+    #: Only this organization's own providers (not the ones it inherits — see signin.social.offered).
     organization_id: NotRequired[str]
+
+    #: Only the environment's providers, which every organization inherits, or only organizations' own.
+    level: NotRequired[Literal["environment", "organization"]]
 
     #: Items per page, 1–100. Default 50.
     limit: NotRequired[int]
@@ -3626,6 +3735,11 @@ class SigninSocialListQuery(TypedDict):
 
 
 SigninSocialListData: TypeAlias = 'list[SocialProvider]'
+
+
+class SigninSocialOfferedQuery(TypedDict):
+    #: The organization whose sign-in page to resolve. Left out, the plain sign-in page, before anybody has said who they are.
+    organization_id: NotRequired[str]
 
 
 class SigninSocialSetBodyParameters(TypedDict):
@@ -3655,8 +3769,11 @@ class SigninSocialSetBodyParameters(TypedDict):
 
 
 class SigninSocialSetBody(TypedDict):
-    #: The organization whose sign-in page offers it.
-    organization_id: str
+    #: The organization the provider belongs to. Send this or environment_wide.
+    organization_id: NotRequired[str | None]
+
+    #: True to make the provider the environment's own rather than one organization's. Send this or organization_id.
+    environment_wide: NotRequired[bool]
 
     #: The catalogue key: google, microsoft, okta, auth0, keycloak, gitlab, slack, github, discord, apple, facebook, linkedin, bitbucket, xero, intuit.
     provider: str
@@ -3669,6 +3786,55 @@ class SigninSocialSetBody(TypedDict):
 
     #: What the chosen provider needs besides its client credentials — Microsoft's directory, Okta's domain, Apple's team id, key id and private key.
     parameters: NotRequired[SigninSocialSetBodyParameters]
+
+    #: Extra scopes to request beyond the ones sign-in needs (for example `read:org` on GitHub). Replaces any extra scopes already set; an empty list removes them.
+    scopes: NotRequired[list[str]]
+
+    #: A ULID to create the provider under, so its redirect URI (which contains the id) can be registered with the provider first. Left out, one is minted.
+    reserved_id: NotRequired[str | None]
+
+
+class SigninSocialUpdateBodyParameters(TypedDict):
+    """What the chosen provider needs besides its client credentials — Microsoft's directory, Okta's domain, Apple's team id, key id and private key."""
+
+
+    #: Directory (tenant) ID (Microsoft Entra ID).
+    directory: NotRequired[str | None]
+
+    #: Okta domain (Okta).
+    domain: NotRequired[str | None]
+
+    #: Keycloak host (Keycloak).
+    host: NotRequired[str | None]
+
+    #: Key ID (Apple).
+    key_id: NotRequired[str | None]
+
+    #: Private key (.p8) (Apple).
+    private_key: NotRequired[str | None]
+
+    #: Realm (Keycloak).
+    realm: NotRequired[str | None]
+
+    #: Team ID (Apple).
+    team_id: NotRequired[str | None]
+
+
+class SigninSocialUpdateBody(TypedDict):
+    #: Only change it if it is this organization's; anything else is a 404.
+    organization_id: NotRequired[str | None]
+
+    #: A new client id. For Apple, the Services ID.
+    client_id: NotRequired[str]
+
+    #: A new client secret. Write-only; left out or blank keeps the one on file.
+    client_secret: NotRequired[str | None]
+
+    #: What the chosen provider needs besides its client credentials — Microsoft's directory, Okta's domain, Apple's team id, key id and private key.
+    parameters: NotRequired[SigninSocialUpdateBodyParameters]
+
+    #: Extra scopes to request beyond the ones sign-in needs (for example `read:org` on GitHub). Replaces any extra scopes already set; an empty list removes them.
+    scopes: NotRequired[list[str]]
 
 
 class SodPoliciesCreateBody(TypedDict):
@@ -4296,8 +4462,13 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "signin.sms.get": OperationSpec(action="signin.sms.get", operation_id="signin_sms_get", method="GET", path="/sign-in/sms", path_params=(), scope="signin:read", danger="read", approval=True, body=False, pagination=None),
     "signin.sms.update": OperationSpec(action="signin.sms.update", operation_id="signin_sms_update", method="PATCH", path="/sign-in/sms", path_params=(), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
     "signin.social.delete": OperationSpec(action="signin.social.delete", operation_id="signin_social_delete", method="DELETE", path="/sign-in/social-providers/{id}", path_params=("id",), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
+    "signin.social.disable": OperationSpec(action="signin.social.disable", operation_id="signin_social_disable", method="POST", path="/sign-in/social-providers/{id}/disable", path_params=("id",), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
+    "signin.social.enable": OperationSpec(action="signin.social.enable", operation_id="signin_social_enable", method="POST", path="/sign-in/social-providers/{id}/enable", path_params=("id",), scope="signin:write", danger="write", approval=True, body=True, pagination=None),
+    "signin.social.inherit": OperationSpec(action="signin.social.inherit", operation_id="signin_social_inherit", method="PUT", path="/sign-in/social-providers/inherited/{provider}", path_params=("provider",), scope="signin:write", danger="write", approval=True, body=True, pagination=None),
     "signin.social.list": OperationSpec(action="signin.social.list", operation_id="signin_social_list", method="GET", path="/sign-in/social-providers", path_params=(), scope="signin:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "signin.social.offered": OperationSpec(action="signin.social.offered", operation_id="signin_social_offered", method="GET", path="/sign-in/social-providers/offered", path_params=(), scope="signin:read", danger="read", approval=True, body=False, pagination=None),
     "signin.social.set": OperationSpec(action="signin.social.set", operation_id="signin_social_set", method="POST", path="/sign-in/social-providers", path_params=(), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
+    "signin.social.update": OperationSpec(action="signin.social.update", operation_id="signin_social_update", method="PATCH", path="/sign-in/social-providers/{id}", path_params=("id",), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
     "sod_policies.create": OperationSpec(action="sod_policies.create", operation_id="sod_policies_create", method="POST", path="/sod-policies", path_params=(), scope="governance:write", danger="write", approval=True, body=True, pagination=None),
     "sod_policies.delete": OperationSpec(action="sod_policies.delete", operation_id="sod_policies_delete", method="DELETE", path="/sod-policies/{id}", path_params=("id",), scope="governance:write", danger="critical", approval=True, body=True, pagination=None),
     "sod_policies.get": OperationSpec(action="sod_policies.get", operation_id="sod_policies_get", method="GET", path="/sod-policies/{id}", path_params=("id",), scope="governance:read", danger="read", approval=True, body=False, pagination=None),
@@ -5409,7 +5580,7 @@ class BrandingAppearanceMethods:
     def set(self, body: BrandingAppearanceSetBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Appearance] | PendingApprovalResult[Appearance]: ...
 
     def set(self, body: BrandingAppearanceSetBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Appearance] | PendingApprovalResult[Appearance]:
-        """Set the hosted sign-in theme (preset, colours, corners, type, logo) for the environment default or one organization.
+        """Set the hosted sign-in theme (preset, colours, corners, type, uploaded logo and favicon) for the environment default or one organization.
 
         Requires scope `branding:write`. Danger: write.
 
@@ -8191,7 +8362,7 @@ class SigninPolicyMethods:
     def update(self, body: SigninPolicyUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SignInPolicy] | PendingApprovalResult[SignInPolicy]: ...
 
     def update(self, body: SigninPolicyUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SignInPolicy] | PendingApprovalResult[SignInPolicy]:
-        """Change the authentication policy of the environment baseline, or tighten one organization's override. Requiring SSO signs out password sessions.
+        """Change the authentication policy of the environment baseline — including whether passkeys and magic links are offered and how long sessions last — or tighten one organization's override. Requiring SSO signs out password sessions.
 
         Requires scope `signin:write`. Danger: critical.
 
@@ -8291,13 +8462,64 @@ class SigninSocialMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["signin.social.delete"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
+    def disable(self, id: str, body: SigninSocialDisableBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider]: ...
+
+    @overload
+    def disable(self, id: str, body: SigninSocialDisableBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider] | PendingApprovalResult[SocialProvider]: ...
+
+    def disable(self, id: str, body: SigninSocialDisableBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider] | PendingApprovalResult[SocialProvider]:
+        """Turn a social login provider off without removing it. People who used it keep their accounts.
+
+        Requires scope `signin:write`. Danger: critical.
+
+        ``POST /sign-in/social-providers/{id}/disable`` · action ``signin.social.disable``
+        Scope ``signin:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signin.social.disable"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def enable(self, id: str, body: SigninSocialEnableBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider]: ...
+
+    @overload
+    def enable(self, id: str, body: SigninSocialEnableBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider] | PendingApprovalResult[SocialProvider]: ...
+
+    def enable(self, id: str, body: SigninSocialEnableBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider] | PendingApprovalResult[SocialProvider]:
+        """Turn a social login provider that was turned off back on, with the credentials it already has.
+
+        Requires scope `signin:write`. Danger: write.
+
+        ``POST /sign-in/social-providers/{id}/enable`` · action ``signin.social.enable``
+        Scope ``signin:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signin.social.enable"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def inherit(self, provider: str, body: SigninSocialInheritBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OfferedSocialProviders]: ...
+
+    @overload
+    def inherit(self, provider: str, body: SigninSocialInheritBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OfferedSocialProviders] | PendingApprovalResult[OfferedSocialProviders]: ...
+
+    def inherit(self, provider: str, body: SigninSocialInheritBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OfferedSocialProviders] | PendingApprovalResult[OfferedSocialProviders]:
+        """Turn one of the environment's social login providers off (or back on) for one organization's sign-in page.
+
+        Requires scope `signin:write`. Danger: write.
+
+        ``PUT /sign-in/social-providers/inherited/{provider}`` · action ``signin.social.inherit``
+        Scope ``signin:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signin.social.inherit"], (provider,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
     def list(self, query: SigninSocialListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SigninSocialListData]: ...
 
     @overload
     def list(self, query: SigninSocialListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SigninSocialListData] | PendingApprovalResult[SigninSocialListData]: ...
 
     def list(self, query: SigninSocialListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SigninSocialListData] | PendingApprovalResult[SigninSocialListData]:
-        """List the social login providers (Google, GitHub, Apple…) enabled in this environment, optionally for one organization.
+        """List the social login providers (Google, GitHub, Apple…) set up in this environment — the environment's own and organizations' — optionally for one organization.
 
         Requires scope `signin:read`. Danger: read.
 
@@ -8312,13 +8534,30 @@ class SigninSocialMethods:
         return self._core.paginate(ENVIRONMENT_OPERATIONS["signin.social.list"], (), query, headers=headers)
 
     @overload
+    def offered(self, query: SigninSocialOfferedQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OfferedSocialProviders]: ...
+
+    @overload
+    def offered(self, query: SigninSocialOfferedQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OfferedSocialProviders] | PendingApprovalResult[OfferedSocialProviders]: ...
+
+    def offered(self, query: SigninSocialOfferedQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[OfferedSocialProviders] | PendingApprovalResult[OfferedSocialProviders]:
+        """The social login buttons one organization's sign-in page shows (or the plain sign-in page's), after inheritance from the environment, with where each comes from.
+
+        Requires scope `signin:read`. Danger: read.
+
+        ``GET /sign-in/social-providers/offered`` · action ``signin.social.offered``
+        Scope ``signin:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signin.social.offered"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
     def set(self, body: SigninSocialSetBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider]: ...
 
     @overload
     def set(self, body: SigninSocialSetBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider] | PendingApprovalResult[SocialProvider]: ...
 
     def set(self, body: SigninSocialSetBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider] | PendingApprovalResult[SocialProvider]:
-        """Enable a social login provider (Google, GitHub, Apple…) for one organization with its client credentials. The secret is never returned.
+        """Enable a social login provider (Google, GitHub, Apple…) for the whole environment or for one organization, with its client credentials. The secret is never returned.
 
         Requires scope `signin:write`. Danger: critical.
 
@@ -8327,6 +8566,23 @@ class SigninSocialMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["signin.social.set"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def update(self, id: str, body: SigninSocialUpdateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider]: ...
+
+    @overload
+    def update(self, id: str, body: SigninSocialUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider] | PendingApprovalResult[SocialProvider]: ...
+
+    def update(self, id: str, body: SigninSocialUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SocialProvider] | PendingApprovalResult[SocialProvider]:
+        """Change a social login provider's client credentials, provider values or extra scopes. Secrets left out keep the ones on file.
+
+        Requires scope `signin:write`. Danger: critical.
+
+        ``PATCH /sign-in/social-providers/{id}`` · action ``signin.social.update``
+        Scope ``signin:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signin.social.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
 class SigninMethods:

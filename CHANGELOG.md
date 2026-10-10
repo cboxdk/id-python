@@ -5,6 +5,8 @@ by their tags and commit history.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-10
+
 Needs laravel-id 1.24 / the Cbox ID release with feature flags, fine-grained
 authorization, Pipes and SMS as a second factor. Against an older instance the new claim
 reads as absent and the new endpoints answer 404.
@@ -19,10 +21,17 @@ reads as absent and the new endpoints answer 404.
   `env.feature_flags.*` (including `evaluate({"user_id", "organization_id"})`), `env.fga.*`
   (`check`, `check_batch`, tuples write/delete/list, resources and subjects lists, schema
   get/update/validate, with `consistency_token` on every read), `env.pipes.*` (pipe setup,
-  grants, connections), `env.radar.*`, `env.signin.sms.*`, `env.users.mfa.sms.remove()`, the
+  grants, connections), `env.radar.*`, `env.signin.sms.*`, the environment sign-in methods
+  (`env.signin.social.*` update/enable/disable/inherit/offered, `environment_wide` /
+  `organization_id` on social set, the auth policy's method fields),
+  `env.branding.appearance.set()` taking the logo and favicon as base64 data URIs, `env.users.mfa.sms.remove()`, the
   HRIS directory routes (`env.directories.*`), and on the account plane
   `me.mfa.sms.remove()` and `me.pipes.disconnect()`. `fga_tuple()` writes a tuple in the
   notation the batch check takes.
+- `FrontendClient.config(organization=...)`: the sign-in document for one organization (by
+  id or slug), whose `social` list is exactly what that organization's hosted page offers.
+  Each organization is cached on its own. `FrontendConfig.methods` says whether passkeys and
+  magic links are switched on.
 - Pipes: `client.pipes.lease_token(provider, user_id=..., purpose=...)` leases a fresh
   token for a person's connected account with a cached client-credentials `vault.lease`
   token; `PipesClient(issuer, access_token)` does the same with a token you hold. Refusals

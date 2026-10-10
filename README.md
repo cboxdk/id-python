@@ -29,7 +29,8 @@ from cbox_id import FrontendClient
 
 frontend = FrontendClient("https://id.acme.com", "pk_live_…")
 
-config = frontend.config()  # endpoints, social buttons, the customer's theme
+config = frontend.config()  # endpoints, social buttons, which methods are on, the theme
+acme = frontend.config(organization="acme")  # the buttons acme's hosted page shows
 session = frontend.session(token)  # session.user is None when nobody is signed in
 ```
 
