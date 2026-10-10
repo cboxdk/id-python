@@ -690,6 +690,15 @@ class Generator:
             for o in actions:
                 o.name = o.name[1:]
 
+        # An action can be both a method and the namespace of another: `fga.check` and
+        # `fga.check.batch`. A member cannot be both, so the deeper one folds its last two
+        # segments together — `fga.check_batch()` next to `fga.check()`.
+        leaves = {".".join(o.name) for o in ops}
+
+        for o in ops:
+            while len(o.name) > 2 and ".".join(o.name[:-1]) in leaves:
+                o.name = [*o.name[:-2], f"{o.name[-2]}_{o.name[-1]}"]
+
         for o in ops:
             o.name = [identifier(segment) for segment in o.name]
 
