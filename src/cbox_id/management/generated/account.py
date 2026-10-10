@@ -90,8 +90,10 @@ ACCOUNT_OPERATIONS: Mapping[str, OperationSpec] = {
     "account.api_keys.revoke": OperationSpec(action="account.api_keys.revoke", operation_id="account_api_keys_revoke", method="DELETE", path="/me/organizations/{organization_id}/api-keys/{key_id}", path_params=("organization_id", "key_id"), scope="account:api_keys:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.applications.revoke": OperationSpec(action="account.applications.revoke", operation_id="account_applications_revoke", method="DELETE", path="/me/applications/{client_id}", path_params=("client_id",), scope="account:applications:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.devices.remove": OperationSpec(action="account.devices.remove", operation_id="account_devices_remove", method="DELETE", path="/me/devices/{device_id}", path_params=("device_id",), scope="account:devices:write", danger="destructive", approval=True, body=False, pagination=None),
+    "account.mfa.sms.remove": OperationSpec(action="account.mfa.sms.remove", operation_id="account_mfa_sms_remove", method="DELETE", path="/me/mfa/sms", path_params=(), scope="account:sign_in:write", danger="critical", approval=True, body=False, pagination=None),
     "account.organizations.leave": OperationSpec(action="account.organizations.leave", operation_id="account_organizations_leave", method="POST", path="/me/organizations/{organization_id}/leave", path_params=("organization_id",), scope="account:organizations:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.passkeys.remove": OperationSpec(action="account.passkeys.remove", operation_id="account_passkeys_remove", method="DELETE", path="/me/passkeys/{passkey_id}", path_params=("passkey_id",), scope="account:sign_in:write", danger="critical", approval=True, body=False, pagination=None),
+    "account.pipes.disconnect": OperationSpec(action="account.pipes.disconnect", operation_id="account_pipes_disconnect", method="DELETE", path="/me/pipes/{provider}", path_params=("provider",), scope="account:pipes:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.profile.update": OperationSpec(action="account.profile.update", operation_id="account_profile_update", method="PATCH", path="/me/profile", path_params=(), scope="account:profile:write", danger="write", approval=True, body=True, pagination=None),
     "account.sessions.revoke": OperationSpec(action="account.sessions.revoke", operation_id="account_sessions_revoke", method="DELETE", path="/me/sessions/{session_id}", path_params=("session_id",), scope="account:sessions:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.sessions.revoke_others": OperationSpec(action="account.sessions.revoke_others", operation_id="account_sessions_revoke_others", method="POST", path="/me/sessions/revoke-others", path_params=(), scope="account:sessions:write", danger="critical", approval=True, body=False, pagination=None),
@@ -207,6 +209,38 @@ class DevicesMethods:
         return self._core.call(ACCOUNT_OPERATIONS["account.devices.remove"], (device_id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class MfaSmsMethods:
+    """``mfa.sms.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def remove(self, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def remove(self, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def remove(self, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Remove your phone number for text-message sign-in codes.
+
+        Requires scope `account:sign_in:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: critical.
+
+        ``DELETE /me/mfa/sms`` · action ``account.mfa.sms.remove``
+        Scope ``account:sign_in:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.mfa.sms.remove"], (), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class MfaMethods:
+    """``mfa.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.sms = MfaSmsMethods(core)
+
+
 class OrganizationsMethods:
     """``organizations.*``"""
 
@@ -253,6 +287,30 @@ class PasskeysMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ACCOUNT_OPERATIONS["account.passkeys.remove"], (passkey_id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class PipesMethods:
+    """``pipes.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def disconnect(self, provider: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def disconnect(self, provider: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def disconnect(self, provider: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Disconnect one of your connected services, revoking the access you gave it.
+
+        Requires scope `account:pipes:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: destructive.
+
+        ``DELETE /me/pipes/{provider}`` · action ``account.pipes.disconnect``
+        Scope ``account:pipes:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.pipes.disconnect"], (provider,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
 class ProfileMethods:
@@ -366,8 +424,10 @@ class AccountClient(ManagementClient):
         self.api_keys = ApiKeysMethods(core)
         self.applications = ApplicationsMethods(core)
         self.devices = DevicesMethods(core)
+        self.mfa = MfaMethods(core)
         self.organizations = OrganizationsMethods(core)
         self.passkeys = PasskeysMethods(core)
+        self.pipes = PipesMethods(core)
         self.profile = ProfileMethods(core)
         self.sessions = SessionsMethods(core)
         self.social = SocialMethods(core)

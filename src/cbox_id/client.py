@@ -29,6 +29,7 @@ from .models import (
     CboxUser,
     RefreshedTokens,
 )
+from .pipes import PipesClient, pipe_connect_url
 from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_webhook
 
@@ -73,6 +74,8 @@ class CboxIdClient:
         self._discovery_cache: tuple[dict[str, Any], float] | None = None
         self._jwks_cache: tuple[dict[str, Any], float] | None = None
         self._jwks_refetched_at: float = 0.0
+        self._pipes: PipesClient | None = None
+        self._lease_token_cache: tuple[str, float] | None = None
 
     # -- login ---------------------------------------------------------------
 
@@ -294,6 +297,7 @@ class CboxIdClient:
             # From the signed id_token alone: a `sid` is what a back-channel logout names
             # to end a session, and UserInfo's unsigned body must not be able to pick it.
             session_id=sid if isinstance(sid, str) and sid != "" else None,
+            feature_flags=_claims.feature_flags(claims),
         )
 
     # -- hosted profile & logout ---------------------------------------------
@@ -338,10 +342,56 @@ class CboxIdClient:
             params["id_token_hint"] = id_token_hint
         return f"{endpoint}?{urlencode(params)}"
 
+    def pipe_connect_url(self, provider: str, return_to: str | None = None) -> str:
+        """The hosted page where the signed-in person connects their account at ``provider``.
+
+        Pipes: ``/account/connected-services/{provider}/connect``, preselected to this app.
+        They come back to ``return_to`` with ``?provider=…&status=connected|cancelled|failed``,
+        honoured only on an origin the app registered.
+        """
+        return pipe_connect_url(
+            self._config.issuer, provider, client_id=self._config.client_id, return_to=return_to
+        )
+
     # -- back-channel --------------------------------------------------------
+
+    @property
+    def pipes(self) -> PipesClient:
+        """Lease Pipes tokens as this app, with a client-credentials ``vault.lease`` token.
+
+        The token is obtained on first use and reused until shortly before it expires::
+
+            token = client.pipes.lease_token("github", user_id=uid, purpose="list-repos")
+
+        For a token issued FOR a person, build a :class:`PipesClient` with it instead.
+        """
+        if self._pipes is None:
+            self._pipes = PipesClient(
+                self._config.issuer,
+                self._lease_token,
+                client_id=self._config.client_id,
+                http_client=self._http,
+            )
+        return self._pipes
+
+    def _lease_token(self) -> str:
+        cached = self._lease_token_cache
+        if cached is not None and cached[1] > time.monotonic():
+            return cached[0]
+        token, expires_in = self._client_credentials(["vault.lease"], None)
+        # Thirty seconds of slack, so a lease is never sent with a token about to lapse.
+        # No `expires_in` means no caching: there is nothing to know when to stop by.
+        if expires_in is not None and expires_in > 60:
+            self._lease_token_cache = (token, time.monotonic() + expires_in - 30)
+        return token
 
     def machine_token(self, *, scopes: list[str] | None = None, resource: str | None = None) -> str:
         """A machine (client-credentials) token for calling APIs as your app."""
+        return self._client_credentials(scopes, resource)[0]
+
+    def _client_credentials(
+        self, scopes: list[str] | None, resource: str | None
+    ) -> tuple[str, int | None]:
         data: dict[str, str] = {
             "grant_type": "client_credentials",
             "client_id": self._config.client_id,
@@ -355,10 +405,12 @@ class CboxIdClient:
         response = self._http.post(self._endpoint("token_endpoint"), data=data)
         if response.status_code >= 400:
             raise AuthenticationError.from_response("Machine token request failed", response)
-        token = response.json().get("access_token")
+        body = response.json()
+        token = body.get("access_token")
         if not isinstance(token, str):
             raise AuthenticationError("The token response had no access_token.")
-        return token
+        expires_in = body.get("expires_in")
+        return token, int(expires_in) if isinstance(expires_in, int | float) else None
 
     def refresh(self, refresh_token: str) -> RefreshedTokens:
         """Exchange a refresh token for a fresh access token (OAuth 2.0 refresh_token).

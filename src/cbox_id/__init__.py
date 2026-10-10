@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from .authz import AuthzManifest, Permission, Role
 from .claims import (
+    FEATURE_FLAGS_SCOPE,
     ClaimSource,
     actor,
+    feature_flags,
+    has_feature,
     has_permission,
     has_role,
     is_support_session,
@@ -21,6 +24,11 @@ from .errors import (
     FrontendApiError,
     InvalidStateError,
     ManifestPublishError,
+    PipeLeaseDeniedError,
+    PipeLeaseError,
+    PipeNotConnectedError,
+    PipeReauthorizationRequiredError,
+    PipeTemporarilyUnavailableError,
 )
 from .frontend import FrontendClient, FrontendConfig, FrontendSession
 from .legacy import LegacyUser, handle_legacy_login
@@ -34,10 +42,30 @@ from .models import (
     OrganizationRole,
     RefreshedTokens,
 )
+from .pipes import (
+    PipeProvider,
+    PipesClient,
+    PipeToken,
+    pipe_connect_url,
+    with_connect_return,
+)
 from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_standard_webhook, verify_webhook
 
 __all__ = [
+    "FEATURE_FLAGS_SCOPE",
+    "PipeLeaseDeniedError",
+    "PipeLeaseError",
+    "PipeNotConnectedError",
+    "PipeProvider",
+    "PipeReauthorizationRequiredError",
+    "PipeTemporarilyUnavailableError",
+    "PipeToken",
+    "PipesClient",
+    "feature_flags",
+    "has_feature",
+    "pipe_connect_url",
+    "with_connect_return",
     "FrontendClient",
     "FrontendConfig",
     "FrontendSession",

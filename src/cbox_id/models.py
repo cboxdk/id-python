@@ -145,6 +145,10 @@ class CboxUser:
     #: your local session on it to honour an OIDC back-channel logout, whose logout token
     #: names the ``sid`` to end. Read from the signed id_token only, never from UserInfo.
     session_id: str | None = None
+    #: The keys of the feature flags on for this person in this organization (the
+    #: ``feature_flags`` claim), or ``None`` when the claim is absent — the
+    #: ``feature_flags`` scope was not requested. See :meth:`has_feature`.
+    feature_flags: list[str] | None = None
 
     def claim(self, key: str) -> Any:
         """Return an arbitrary claim, or ``None``."""
@@ -166,6 +170,13 @@ class CboxUser:
     def has_permission(self, permission: str) -> bool:
         """Whether the session holds ``permission`` (``feature:action``). Exact match."""
         return permission in self.permissions
+
+    def has_feature(self, key: str) -> bool:
+        """Whether the feature flag ``key`` is on for this session. Exact match.
+
+        ``False`` when the claim is absent: a missing scope turns every feature off.
+        """
+        return key in (self.feature_flags or [])
 
 
 @dataclass(frozen=True)

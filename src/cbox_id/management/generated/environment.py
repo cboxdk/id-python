@@ -72,6 +72,20 @@ class ManifestSync(TypedDict):
     orphaned_permission_keys: list[str]
 
 
+class SmsFactorPolicy(TypedDict):
+    #: Text-message codes are accepted as a second factor. Off by default.
+    enabled: bool
+
+    #: ISO 3166-1 alpha-2 countries whose numbers may enrol and be texted. Re-checked at every send.
+    allowed_countries: list[str]
+
+    #: Administrators may add SMS only beside an authenticator app or a passkey.
+    privileged_need_stronger_factor: bool
+
+    #: The deployment's ceiling (CBOX_ID_SMS_ALLOWED_COUNTRIES). Empty: no deployment restriction. A listed country outside it is never texted.
+    deployment_countries: list[str]
+
+
 class SelfServiceSignup(TypedDict):
     enabled: bool
 
@@ -919,8 +933,13 @@ class PortalLink(TypedDict):
     #: What the link may set up.
     intents: list[Literal["sso", "dsync", "domain_verification", "log_streams", "certificate_renewal", "audit_logs"]]
 
-    #: The address the link was mailed to, or null when it was not sent.
+    #: The address the link was mailed to, or null when it was not sent — none was asked for, or the mail was suppressed (see email_suppressed).
     emailed_to: str | None
+
+    #: True when an `email` was asked for and NOT sent because this is a sandbox
+    #: environment, which sends no mail. `emailed_to` is then null, and the `url` in this
+    #: answer is the only way to the link — share it yourself.
+    email_suppressed: bool
 
     #: The one-time setup link — the whole credential. Shown once; `null` on an
     #: idempotent replay of this answer.
@@ -1065,12 +1084,222 @@ class AuditLogExport(TypedDict):
     expires_at: str | None
 
 
+class FgaSubject(TypedDict):
+    #: The subject's type: `user`, or `group` for a userset.
+    type: str
+    id: str
+
+    #: For a userset — everybody with this relation on the subject (`member` of `group:eng`). null for one subject.
+    relation: str | None
+
+
+class FgaTuple(TypedDict):
+    resource_type: str
+    resource_id: str
+    relation: str
+    subject: FgaSubject
+
+    #: The same tuple in the notation: `document:readme#viewer@group:eng#member`.
+    tuple: str
+
+
+class FgaSchema(TypedDict):
+    #: false until a schema is first saved.
+    defined: bool
+
+    #: The source as it was written, comments and all.
+    schema: str | None
+
+    #: How many times the schema has been replaced.
+    version: int
+
+    #: The parsed types, each with its relations and how each is decided.
+    types: list[FgaType]
+    updated_at: str | None
+
+    #: The revision the model is at.
+    consistency_token: str
+
+
+class FgaTypeRelationsItemDirectlyRelatedItem(TypedDict):
+    type: str
+    relation: NotRequired[str]
+
+
+class FgaTypeRelationsItem(TypedDict):
+    name: str
+
+    #: How the relation is decided, as a tree of one-key objects: `direct` (a list of
+    #: `{type, relation?}`), `computed` (a relation name), `from` (`{tupleset, relation}`),
+    #: `union` and `intersection` (lists of rewrites), `exclusion` (`{base, subtract}`).
+    rewrite: dict[str, Any]
+
+    #: The subjects a tuple may name on this relation; empty for a relation that is only computed.
+    directly_related: list[FgaTypeRelationsItemDirectlyRelatedItem]
+
+
+class FgaType(TypedDict):
+    name: str
+    relations: list[FgaTypeRelationsItem]
+
+
+class FgaSchemaValidationErrorsItem(TypedDict):
+    #: 0 when the problem is about the whole schema.
+    line: int
+    message: str
+
+
+class FgaSchemaValidation(TypedDict):
+    valid: bool
+    errors: list[FgaSchemaValidationErrorsItem]
+    types: list[FgaType]
+
+    #: The schema as the platform prints it, when valid.
+    canonical: str | None
+
+
+class FgaTupleWrite(TypedDict):
+    #: Tuples that were new. Re-writing an existing one is not counted.
+    written: int
+
+    #: Tuples that were there to delete.
+    deleted: int
+
+    #: Pass to a check that must see this write.
+    consistency_token: str
+
+
+class FgaCheck(TypedDict):
+    allowed: bool
+    resource_type: str
+    resource_id: str
+    relation: str
+    subject: FgaSubject
+
+    #: The revision the answer was decided at.
+    consistency_token: str
+
+
+class FgaCheckBatch(TypedDict):
+    #: One answer per check, in the order asked.
+    results: list[FgaCheck]
+    consistency_token: str | None
+
+
+class FgaObject(TypedDict):
+    type: str
+    id: str
+
+
 class AuditLogSettings(TypedDict):
     #: Events are kept this many days after they arrive.
     retention_days: int
 
     #: Whether an action with no schema is refused.
     strict_schemas: bool
+
+
+class RadarSettingsBuiltinRulesItem(TypedDict):
+    key: Literal["credential_stuffing", "bot_velocity", "account_attack", "impossible_travel", "new_device", "anonymous_network", "hosting_network", "disposable_email", "risk_score_reject", "risk_score_elevated"]
+    name: str
+    description: str
+    applies_to: Literal["all", "sign_in", "sign_up"]
+    enabled: bool
+    action: Literal["allow", "challenge", "block"]
+
+    #: null for a rule that counts nothing.
+    threshold: int | None
+    threshold_unit: str | None
+    threshold_min: int | None
+    threshold_max: int | None
+
+
+class RadarSettings(TypedDict):
+    #: monitor records every verdict and acts on none; enforce blocks and challenges.
+    mode: Literal["monitor", "enforce"]
+
+    #: True while the environment follows the deployment's default (RISK_MODE) rather than a mode it chose.
+    mode_inherited: bool
+    deployment_mode: Literal["monitor", "enforce"]
+
+    #: The configured IP intelligence source. With none, country, network and travel facts are unknown and the rules on them never fire.
+    ip_intelligence: Literal["none", "maxmind", "ipinfo"]
+    builtin_rules: list[RadarSettingsBuiltinRulesItem]
+
+
+class RadarRuleConditionsItem(TypedDict):
+    field: str
+    operator: Literal["eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "contains", "not_contains", "starts_with", "ends_with", "in_cidr", "not_in_cidr"]
+
+    #: Normalised: a string, a number, true/false, or a list for the list operators.
+    value: str | float | bool | list[str | float]
+
+
+class RadarRule(TypedDict):
+    id: str
+    name: str
+    description: str | None
+
+    #: 1 is evaluated first; the first rule whose conditions all hold decides.
+    position: int
+    enabled: bool
+    applies_to: Literal["all", "sign_in", "sign_up"]
+    action: Literal["allow", "challenge", "block"]
+    conditions: list[RadarRuleConditionsItem]
+
+    #: The conditions as a person reads them.
+    summary: str
+    created_at: str
+    updated_at: str
+
+
+class RadarListEntry(TypedDict):
+    id: str
+    list: Literal["allow", "deny"]
+    kind: Literal["ip", "email", "email_domain", "device"]
+
+    #: Normalised: an IP or CIDR range, a lower-case address or domain, or a device id.
+    value: str
+    note: str | None
+    expires_at: str | None
+    active: bool
+    created_at: str
+
+
+class RadarDecisionTriggeredItem(TypedDict):
+    rule: str
+    name: str
+
+
+class RadarDecision(TypedDict):
+    id: str
+    assessed_at: str
+    flow: Literal["sign_in", "sign_up"]
+    method: Literal["password", "magic_link", "passkey", "sign_up"] | None
+    verdict: Literal["allow", "challenge", "block"]
+
+    #: Whether the verdict was acted on; false under monitor.
+    enforced: bool
+    mode: Literal["monitor", "enforce"]
+
+    #: What decided it: deny_list:<kind>, allow_list:<kind>, rule:<id>, builtin:<key>; null when nothing matched.
+    rule: str | None
+    rule_name: str | None
+
+    #: Every rule that fired, the deciding one included.
+    triggered: list[RadarDecisionTriggeredItem]
+    reasons: list[str]
+    risk_score: float
+    risk_outcome: Literal["allow", "flag", "challenge", "step_up", "reject"]
+    country: str | None
+    asn: int | None
+    email_domain: str | None
+
+    #: The device id (a pseudonym of the device cookie), for a returning device.
+    device: str | None
+
+    #: The facts the rules were evaluated on — never the IP, the address or the user agent.
+    facts: dict[str, Any]
 
 
 class AuditLogVerification(TypedDict):
@@ -1089,23 +1318,63 @@ class AuditLogVerification(TypedDict):
     reason: Literal["missing", "link", "hash", "truncated"] | None
 
 
+class DirectoryLastSyncStatsFailuresItem(TypedDict):
+    external_id: NotRequired[str | None]
+    reason: NotRequired[str]
+
+
+class DirectoryLastSyncStats(TypedDict):
+    """The last pull's counts, and up to 50 records it could not reconcile — by the provider's own id, never by name or email."""
+
+    mode: NotRequired[Literal["full", "incremental"]]
+    provisioned: NotRequired[int]
+    deprovisioned: NotRequired[int]
+    groups: NotRequired[int]
+
+    #: Leavers and people who have not started, who never had an account.
+    skipped: NotRequired[int]
+    failed: NotRequired[int]
+    failures: NotRequired[list[DirectoryLastSyncStatsFailuresItem]]
+
+
 class Directory(TypedDict):
     """A directory syncing an organization's people in. Its token and credentials are never returned after they are minted."""
 
     id: str
     organization_id: str
     name: str
-    provider: Literal["scim", "google_workspace", "microsoft_entra"]
+    provider: Literal["scim", "google_workspace", "microsoft_entra", "workday", "bamboohr", "rippling", "hibob", "personio"]
 
     #: true when this platform fetches from the provider; false for a SCIM endpoint the provider posts to.
     pull: bool
+
+    #: true for an HR system (Workday, BambooHR, Rippling, HiBob, Personio): employment dates decide access and departments become groups.
+    hris: NotRequired[bool]
     active: bool
     status: Literal["active", "paused"]
 
     #: Where the identity provider sends SCIM requests. null for a pull directory.
     scim_base_url: NotRequired[str | None]
     last_synced_at: NotRequired[str | None]
+
+    #: Why the last pull failed, or for a partial one how many records could not be synced and the first reason. Never names a person.
     last_sync_error: NotRequired[str | None]
+
+    #: When the last pull started. null for a SCIM directory.
+    last_sync_started_at: NotRequired[str | None]
+
+    #: How the last pull went. partial: the provider answered but some records could not be reconciled, or a mass deprovisioning was refused.
+    last_sync_status: NotRequired[Literal["running", "succeeded", "partial", "failed"] | None]
+
+    #: The last pull's counts, and up to 50 records it could not reconcile — by the provider's own id, never by name or email.
+    last_sync_stats: NotRequired[DirectoryLastSyncStats | None]
+
+    #: Minutes between scheduled pulls. null for a SCIM directory.
+    sync_interval_minutes: NotRequired[int | None]
+    next_sync_at: NotRequired[str | None]
+
+    #: HR systems only: the HR system's own field names copied onto each person.
+    custom_attributes: NotRequired[list[str] | None]
     created_at: NotRequired[str | None]
 
     #: The SCIM bearer token, on the create and rotate answers only — shown once, never
@@ -1156,6 +1425,60 @@ class SodPolicy(TypedDict):
     role_ids: list[str]
     active: bool
     created_at: NotRequired[str | None]
+
+
+class FeatureFlag(TypedDict):
+    """A switch apps ask about per user and organization. First match wins: switched off, then a user rule, then an organization rule, then the rollout, then the default."""
+
+    id: str
+
+    #: What code asks for and the `feature_flags` claim carries. Fixed once created.
+    key: str
+    description: NotRequired[str | None]
+
+    #: The kill switch: false is off for everyone.
+    enabled: bool
+
+    #: The answer when no rule matches.
+    default_value: bool
+
+    #: On for this share of everyone else, by a stable hash of the user id (the organization id without one).
+    rollout_percentage: NotRequired[int | None]
+
+    #: Rules for named users; they outrank every other rule.
+    users: list[FeatureFlagRule]
+
+    #: Rules for named organizations; they outrank the rollout and the default.
+    organizations: list[FeatureFlagRule]
+    created_at: NotRequired[str | None]
+    updated_at: NotRequired[str | None]
+
+
+class FeatureFlagRule(TypedDict):
+    #: The user's or organization's id.
+    id: str
+
+    #: On or off for them.
+    enabled: bool
+
+
+class FeatureFlagEvaluationEvaluationsItem(TypedDict):
+    key: str
+    enabled: bool
+
+    #: The rule that decided.
+    reason: Literal["disabled", "user_target", "organization_target", "rollout", "default"]
+
+
+class FeatureFlagEvaluation(TypedDict):
+    """Every flag's answer for the user and organization asked about."""
+
+    user_id: str | None
+    organization_id: str | None
+
+    #: The keys of the flags that are on, sorted — exactly what the token's `feature_flags` claim would carry.
+    feature_flags: list[str]
+    evaluations: list[FeatureFlagEvaluationEvaluationsItem]
 
 
 class AccessReview(TypedDict):
@@ -1217,6 +1540,70 @@ class TokenVaultSecret(TypedDict):
 
     #: The OAuth client ids that may lease it. Not on lists.
     grants: NotRequired[list[str]]
+
+
+class Pipe(TypedDict):
+    """A pipe: this environment's OAuth app at a third-party provider, through which people connect their own accounts. The client secret is write-only."""
+
+    id: str
+    provider: Literal["github", "google", "microsoft", "slack", "salesforce", "hubspot", "linear", "notion"]
+    name: str
+
+    #: Your app's OAuth client id at the provider.
+    client_id: str
+
+    #: What people are asked for when they connect.
+    scopes: list[str]
+
+    #: Per-installation values: Microsoft's `tenant`, Salesforce's `domain`.
+    parameters: NotRequired[dict[str, str]]
+    enabled: bool
+
+    #: The callback URL to register at the provider.
+    redirect_uri: str
+
+    #: The OAuth client ids of the apps that may lease its tokens.
+    grants: list[str]
+
+    #: How many people have connected an account through it.
+    connections: int
+    created_at: NotRequired[str | None]
+    updated_at: NotRequired[str | None]
+
+
+class PipeConnection(TypedDict):
+    """One person's connected account at a pipe's provider. Never a token."""
+
+    id: str
+    pipe_id: str
+    provider: str
+    user_id: str
+    status: Literal["active", "needs_reauth"]
+
+    #: The account's name at the provider, when it says (a GitHub login, an email, a workspace).
+    account: NotRequired[str | None]
+    scopes: list[str]
+    metadata: NotRequired[dict[str, str]]
+
+    #: When the current access token expires. Null when it does not.
+    expires_at: NotRequired[str | None]
+    connected_at: NotRequired[str | None]
+    last_refreshed_at: NotRequired[str | None]
+
+    #: Consecutive transient refresh failures.
+    refresh_failures: NotRequired[int]
+    last_error: NotRequired[str | None]
+
+    #: Why it needs reconnecting: the provider's error code, or `no_refresh_token`.
+    reauth_reason: NotRequired[str | None]
+
+
+class PipeConnectRequired(TypedDict):
+    error: Literal["not_connected", "reauthorization_required"]
+    message: str
+
+    #: Where to send the person to connect. Add `?client_id=…&return_to=…` to bring them back to your app.
+    connect_url: str
 
 
 class AgentRequestSubject(TypedDict):
@@ -1815,6 +2202,33 @@ class DirectoriesCreateBody(TypedDict):
     name: str
 
 
+class DirectoriesCredentialsReplaceBodyCredentials(TypedDict):
+    """The new credentials, in the keys the provider's setup names (Google: service_account_json, admin_email; Entra: tenant_id, client_id, client_secret). Write-only."""
+
+    report_url: NotRequired[str]
+    username: NotRequired[str]
+    password: NotRequired[str]
+    client_id: NotRequired[str]
+    client_secret: NotRequired[str]
+    refresh_token: NotRequired[str]
+    subdomain: NotRequired[str]
+    api_key: NotRequired[str]
+    api_token: NotRequired[str]
+    service_user_id: NotRequired[str]
+    service_user_token: NotRequired[str]
+    service_account_json: NotRequired[str]
+    admin_email: NotRequired[str]
+    tenant_id: NotRequired[str]
+
+
+class DirectoriesCredentialsReplaceBody(TypedDict):
+    #: Only if it is this organization's; anything else is a 404.
+    organization_id: NotRequired[str | None]
+
+    #: The new credentials, in the keys the provider's setup names (Google: service_account_json, admin_email; Entra: tenant_id, client_id, client_secret). Write-only.
+    credentials: DirectoriesCredentialsReplaceBodyCredentials
+
+
 class DirectoriesDeleteBody(TypedDict):
     #: Only if it is this organization's; anything else is a 404.
     organization_id: NotRequired[str | None]
@@ -1853,6 +2267,64 @@ class DirectoriesGroupsMapBody(TypedDict):
     mapped: bool
 
 
+class DirectoriesHrisConnectBodyCredentials(TypedDict):
+    """The HR system's credentials, in the keys its setup guide names. Write-only: sealed, never returned."""
+
+
+    #: Workday: Report web-service URL.
+    report_url: NotRequired[str]
+
+    #: Workday: Integration system user.
+    username: NotRequired[str]
+
+    #: Workday: Integration system user password (secret).
+    password: NotRequired[str]
+
+    #: Workday: API client ID; Personio: Client ID.
+    client_id: NotRequired[str]
+
+    #: Workday: API client secret (secret); Personio: Client secret (secret).
+    client_secret: NotRequired[str]
+
+    #: Workday: Refresh token (secret).
+    refresh_token: NotRequired[str]
+
+    #: BambooHR: Company subdomain.
+    subdomain: NotRequired[str]
+
+    #: BambooHR: API key (secret).
+    api_key: NotRequired[str]
+
+    #: Rippling: API token (secret).
+    api_token: NotRequired[str]
+
+    #: HiBob: Service user ID.
+    service_user_id: NotRequired[str]
+
+    #: HiBob: Service user token (secret).
+    service_user_token: NotRequired[str]
+
+
+class DirectoriesHrisConnectBody(TypedDict):
+    #: The organization whose people it provisions.
+    organization_id: str
+
+    #: workday, bamboohr, rippling, hibob or personio.
+    provider: Literal["workday", "bamboohr", "rippling", "hibob", "personio"]
+
+    #: What administrators call it. Defaults to the HR system's name.
+    name: NotRequired[str]
+
+    #: The HR system's credentials, in the keys its setup guide names. Write-only: sealed, never returned.
+    credentials: DirectoriesHrisConnectBodyCredentials
+
+    #: The HR system's own field names to copy onto each person, verbatim.
+    custom_attributes: NotRequired[list[str]]
+
+    #: Minutes between scheduled pulls, 15 to 1440. Omitted or null: the platform default (hourly).
+    sync_interval_minutes: NotRequired[int | None]
+
+
 class DirectoriesListQuery(TypedDict):
     #: Only this organization's.
     organization_id: NotRequired[str | None]
@@ -1873,6 +2345,72 @@ class DirectoriesStatusSetBody(TypedDict):
 
     #: Only if it is this organization's; anything else is a 404.
     organization_id: NotRequired[str | None]
+
+
+class DirectoriesSyncBody(TypedDict):
+    #: Only if it is this organization's; anything else is a 404.
+    organization_id: NotRequired[str | None]
+
+    #: Ask an HR system that syncs incrementally for everybody, not only what changed. Ignored by other providers.
+    full: NotRequired[bool]
+
+
+class DirectoriesSyncSettingsUpdateBodyFieldMap(TypedDict):
+    """Workday only: the report column holding each field, where it is not the default name."""
+
+
+    #: The report column holding id. Default: Employee_ID.
+    id: NotRequired[str]
+
+    #: The report column holding email. Default: Work_Email.
+    email: NotRequired[str]
+
+    #: The report column holding first_name. Default: Legal_First_Name.
+    first_name: NotRequired[str]
+
+    #: The report column holding last_name. Default: Legal_Last_Name.
+    last_name: NotRequired[str]
+
+    #: The report column holding display_name. Default: Preferred_Name.
+    display_name: NotRequired[str]
+
+    #: The report column holding active. Default: Active_Status.
+    active: NotRequired[str]
+
+    #: The report column holding on_leave. Default: On_Leave.
+    on_leave: NotRequired[str]
+
+    #: The report column holding hire_date. Default: Hire_Date.
+    hire_date: NotRequired[str]
+
+    #: The report column holding termination_date. Default: Termination_Date.
+    termination_date: NotRequired[str]
+
+    #: The report column holding department_id. Default: Supervisory_Organization_ID.
+    department_id: NotRequired[str]
+
+    #: The report column holding department. Default: Supervisory_Organization.
+    department: NotRequired[str]
+
+    #: The report column holding manager_id. Default: Manager_Employee_ID.
+    manager_id: NotRequired[str]
+
+    #: The report column holding title. Default: Business_Title.
+    title: NotRequired[str]
+
+
+class DirectoriesSyncSettingsUpdateBody(TypedDict):
+    #: Only if it is this organization's; anything else is a 404.
+    organization_id: NotRequired[str | None]
+
+    #: Minutes between scheduled pulls, 15 to 1440. null returns to the platform default (hourly).
+    sync_interval_minutes: NotRequired[int | None]
+
+    #: HR systems only: the HR system's own field names to copy onto each person, verbatim.
+    custom_attributes: NotRequired[list[str]]
+
+    #: Workday only: the report column holding each field, where it is not the default name.
+    field_map: NotRequired[DirectoriesSyncSettingsUpdateBodyFieldMap]
 
 
 class DirectoriesTokenRotateBody(TypedDict):
@@ -1908,6 +2446,289 @@ class EventsListQuery(TypedDict):
 
 
 EventsListData: TypeAlias = 'list[DomainEvent]'
+
+
+class FeatureFlagsCreateBodyUsersItem(TypedDict):
+    #: The user's id.
+    id: str
+
+    #: On (true, the default) or off for them, whatever the organization, rollout or default say.
+    enabled: NotRequired[bool]
+
+
+class FeatureFlagsCreateBodyOrganizationsItem(TypedDict):
+    #: The organization's id.
+    id: str
+
+    #: On (true, the default) or off for them, whatever the organization, rollout or default say.
+    enabled: NotRequired[bool]
+
+
+class FeatureFlagsCreateBody(TypedDict):
+    #: What code asks for and the `feature_flags` claim carries: lowercase letters and digits, with `-`, `_` or `.` between them. Fixed once created.
+    key: str
+    description: NotRequired[str | None]
+
+    #: The kill switch: off means off for everyone, whatever the rules say. Defaults to true.
+    enabled: NotRequired[bool]
+
+    #: The answer when no rule matches. Defaults to false.
+    default_value: NotRequired[bool]
+
+    #: Rules for named users — they outrank every other rule. The COMPLETE list when sent.
+    users: NotRequired[list[FeatureFlagsCreateBodyUsersItem]]
+
+    #: Rules for named organizations — they outrank the rollout and the default. The COMPLETE list when sent.
+    organizations: NotRequired[list[FeatureFlagsCreateBodyOrganizationsItem]]
+
+    #: On for this percentage of everyone else, by a stable hash of the user id (or the organization id without one). null for no rollout.
+    rollout_percentage: NotRequired[int | None]
+
+
+class FeatureFlagsEvaluateQuery(TypedDict):
+    #: The user to evaluate for. Left out, only organization rules, an organization-bucketed rollout and defaults apply.
+    user_id: NotRequired[str]
+
+    #: The organization the question is asked in.
+    organization_id: NotRequired[str]
+
+
+class FeatureFlagsListQuery(TypedDict):
+    #: Items per page, 1–100. Default 50.
+    limit: NotRequired[int]
+
+    #: The `next_cursor` of the previous page.
+    after: NotRequired[str]
+
+
+FeatureFlagsListData: TypeAlias = 'list[FeatureFlag]'
+
+
+class FeatureFlagsUpdateBodyUsersItem(TypedDict):
+    #: The user's id.
+    id: str
+
+    #: On (true, the default) or off for them, whatever the organization, rollout or default say.
+    enabled: NotRequired[bool]
+
+
+class FeatureFlagsUpdateBodyOrganizationsItem(TypedDict):
+    #: The organization's id.
+    id: str
+
+    #: On (true, the default) or off for them, whatever the organization, rollout or default say.
+    enabled: NotRequired[bool]
+
+
+class FeatureFlagsUpdateBody(TypedDict):
+    #: Null or empty clears it.
+    description: NotRequired[str | None]
+
+    #: The kill switch: off means off for everyone.
+    enabled: NotRequired[bool]
+
+    #: The answer when no rule matches.
+    default_value: NotRequired[bool]
+
+    #: Rules for named users — they outrank every other rule. The COMPLETE list when sent.
+    users: NotRequired[list[FeatureFlagsUpdateBodyUsersItem]]
+
+    #: Rules for named organizations — they outrank the rollout and the default. The COMPLETE list when sent.
+    organizations: NotRequired[list[FeatureFlagsUpdateBodyOrganizationsItem]]
+
+    #: On for this percentage of everyone else, by a stable hash of the user id (or the organization id without one). null for no rollout.
+    rollout_percentage: NotRequired[int | None]
+
+
+class FgaCheckQuery(TypedDict):
+    #: The resource's type: `document`.
+    resource_type: str
+
+    #: The resource's id: `readme`.
+    resource_id: str
+
+    #: The relation to check: `viewer`.
+    relation: str
+
+    #: The subject's type: `user`, or `group` for a userset.
+    subject_type: str
+
+    #: The subject's id: `alice`.
+    subject_id: str
+
+    #: For a userset subject — `member` with `group`/`eng` asks about every member of eng.
+    subject_relation: NotRequired[str]
+
+    #: A `consistency_token` a write returned: the answer is then at least as fresh as that write.
+    consistency_token: NotRequired[str | None]
+
+
+class FgaCheckBatchQuery(TypedDict):
+    #: 1–100 checks, each `resource_type:resource_id#relation@subject_type:subject_id[#subject_relation]`.
+    checks: list[str]
+
+    #: A `consistency_token` a write returned: the answer is then at least as fresh as that write.
+    consistency_token: NotRequired[str | None]
+
+
+class FgaResourcesListQuery(TypedDict):
+    #: Which type of resource to list: `document`.
+    resource_type: str
+
+    #: The relation the subject must have: `viewer`.
+    relation: str
+
+    #: The subject's type: `user`.
+    subject_type: str
+
+    #: The subject's id: `alice`.
+    subject_id: str
+
+    #: For a userset subject: `member` with `group`/`eng`.
+    subject_relation: NotRequired[str]
+
+    #: A `consistency_token` a write returned: the answer is then at least as fresh as that write.
+    consistency_token: NotRequired[str | None]
+
+    #: Ids per page, 1–1000. Default 100.
+    limit: NotRequired[int]
+
+    #: The `next_cursor` of the previous page.
+    after: NotRequired[str]
+
+
+FgaResourcesListData: TypeAlias = 'list[FgaObject]'
+
+
+class FgaSchemaUpdateBody(TypedDict):
+    #: The schema, in the schema language: `type document` then `  relation viewer: [user, group#member] or editor or viewer from parent`.
+    schema: str
+
+
+class FgaSchemaValidateQuery(TypedDict):
+    #: The schema to check, in the schema language.
+    schema: str
+
+
+class FgaSubjectsListQuery(TypedDict):
+    #: The resource's type: `document`.
+    resource_type: str
+
+    #: The resource's id: `readme`.
+    resource_id: str
+
+    #: The relation: `viewer`.
+    relation: str
+
+    #: Which type of subject to list: `user`.
+    subject_type: str
+
+    #: A `consistency_token` a write returned: the answer is then at least as fresh as that write.
+    consistency_token: NotRequired[str | None]
+
+    #: Ids per page, 1–1000. Default 100.
+    limit: NotRequired[int]
+
+    #: The `next_cursor` of the previous page.
+    after: NotRequired[str]
+
+
+FgaSubjectsListData: TypeAlias = 'list[FgaObject]'
+
+
+class FgaTuplesDeleteBodyTuplesItemSubject(TypedDict):
+    """Who: one subject (`user:alice`), or a userset (`group:eng#member`)."""
+
+
+    #: The subject's type: `user`, or `group` for a userset.
+    type: str
+
+    #: Your id for the subject: `alice`, `eng`.
+    id: str
+
+    #: For a userset — everybody with this relation on the subject: `member` of `group:eng`. Omit for one subject.
+    relation: NotRequired[str | None]
+
+
+class FgaTuplesDeleteBodyTuplesItem(TypedDict):
+    #: The resource's type, as the schema names it: `document`.
+    resource_type: str
+
+    #: Your id for the resource: `readme`.
+    resource_id: str
+
+    #: The relation: `viewer`.
+    relation: str
+
+    #: Who: one subject (`user:alice`), or a userset (`group:eng#member`).
+    subject: FgaTuplesDeleteBodyTuplesItemSubject
+
+
+class FgaTuplesDeleteBody(TypedDict):
+    #: 1–100 tuples to delete, all together or none.
+    tuples: list[FgaTuplesDeleteBodyTuplesItem]
+
+
+class FgaTuplesListQuery(TypedDict):
+    #: Only tuples on this resource type.
+    resource_type: NotRequired[str]
+
+    #: Only tuples on this resource.
+    resource_id: NotRequired[str]
+
+    #: Only tuples of this relation.
+    relation: NotRequired[str]
+
+    #: Only tuples naming this subject type.
+    subject_type: NotRequired[str]
+
+    #: Only tuples naming this subject.
+    subject_id: NotRequired[str]
+
+    #: Only tuples naming a userset with this relation.
+    subject_relation: NotRequired[str]
+
+    #: Tuples per page, 1–100. Default 50.
+    limit: NotRequired[int]
+
+    #: The `next_cursor` of the previous page.
+    after: NotRequired[str]
+
+
+FgaTuplesListData: TypeAlias = 'list[FgaTuple]'
+
+
+class FgaTuplesWriteBodyTuplesItemSubject(TypedDict):
+    """Who: one subject (`user:alice`), or a userset (`group:eng#member`)."""
+
+
+    #: The subject's type: `user`, or `group` for a userset.
+    type: str
+
+    #: Your id for the subject: `alice`, `eng`.
+    id: str
+
+    #: For a userset — everybody with this relation on the subject: `member` of `group:eng`. Omit for one subject.
+    relation: NotRequired[str | None]
+
+
+class FgaTuplesWriteBodyTuplesItem(TypedDict):
+    #: The resource's type, as the schema names it: `document`.
+    resource_type: str
+
+    #: Your id for the resource: `readme`.
+    resource_id: str
+
+    #: The relation: `viewer`.
+    relation: str
+
+    #: Who: one subject (`user:alice`), or a userset (`group:eng#member`).
+    subject: FgaTuplesWriteBodyTuplesItemSubject
+
+
+class FgaTuplesWriteBody(TypedDict):
+    #: 1–100 tuples to write, all together or none.
+    tuples: list[FgaTuplesWriteBodyTuplesItem]
 
 
 class FrontendKeysCreateBody(TypedDict):
@@ -2343,6 +3164,92 @@ class PermissionsUpdateBody(TypedDict):
     tenant_assignable: NotRequired[bool]
 
 
+class PipesConnectionsListQuery(TypedDict):
+    #: Only this person's connection.
+    user_id: NotRequired[str]
+
+    #: Items per page, 1–100. Default 50.
+    limit: NotRequired[int]
+
+    #: The `next_cursor` of the previous page.
+    after: NotRequired[str]
+
+
+PipesConnectionsListData: TypeAlias = 'list[PipeConnection]'
+
+
+class PipesCreateBodyParameters(TypedDict):
+    """Per-installation values some providers need. Left out: the provider's defaults."""
+
+
+    #: Microsoft 365 only: `common` (default), `organizations`, or one directory's tenant id or domain.
+    tenant: NotRequired[str]
+
+    #: Salesforce only: `login.salesforce.com` (default), `test.salesforce.com`, or your My Domain host.
+    domain: NotRequired[str]
+
+
+class PipesCreateBody(TypedDict):
+    #: The provider's key.
+    provider: Literal["github", "google", "microsoft", "slack", "salesforce", "hubspot", "linear", "notion"]
+
+    #: The OAuth client id of your app at the provider.
+    client_id: str
+
+    #: Its client secret. Write-only: sealed, never returned.
+    client_secret: str
+
+    #: The OAuth scopes to ask people for. Left out: the provider's defaults.
+    scopes: NotRequired[list[str]]
+
+    #: Per-installation values some providers need. Left out: the provider's defaults.
+    parameters: NotRequired[PipesCreateBodyParameters]
+
+
+class PipesGrantsCreateBody(TypedDict):
+    #: The OAuth client id of an app in this environment.
+    client_id: str
+
+
+class PipesListQuery(TypedDict):
+    #: Items per page, 1–100. Default 50.
+    limit: NotRequired[int]
+
+    #: The `next_cursor` of the previous page.
+    after: NotRequired[str]
+
+
+PipesListData: TypeAlias = 'list[Pipe]'
+
+
+class PipesUpdateBodyParameters(TypedDict):
+    """Per-installation values some providers need. Left out: the provider's defaults."""
+
+
+    #: Microsoft 365 only: `common` (default), `organizations`, or one directory's tenant id or domain.
+    tenant: NotRequired[str]
+
+    #: Salesforce only: `login.salesforce.com` (default), `test.salesforce.com`, or your My Domain host.
+    domain: NotRequired[str]
+
+
+class PipesUpdateBody(TypedDict):
+    #: A new OAuth client id. Left out, unchanged.
+    client_id: NotRequired[str]
+
+    #: A new client secret, sealed. Left out, unchanged.
+    client_secret: NotRequired[str]
+
+    #: The OAuth scopes to ask people for. Left out: the provider's defaults.
+    scopes: NotRequired[list[str]]
+
+    #: Per-installation values some providers need. Left out: the provider's defaults.
+    parameters: NotRequired[PipesUpdateBodyParameters]
+
+    #: False refuses new connections and every lease. Left out, unchanged.
+    enabled: NotRequired[bool]
+
+
 class ProvisioningTargetsCreateBody(TypedDict):
     #: The organization the target belongs to. Send this or environment_wide.
     organization_id: NotRequired[str | None]
@@ -2402,6 +3309,146 @@ class ProvisioningTargetsStatusSetBody(TypedDict):
 
     #: Only if it is this organization's; anything else is a 404.
     organization_id: NotRequired[str | None]
+
+
+RadarDecisionsListQuery = TypedDict("RadarDecisionsListQuery", {"verdict": 'NotRequired[Literal["allow", "challenge", "block"]]', "flow": 'NotRequired[Literal["sign_in", "sign_up"]]', "rule": 'NotRequired[str]', "country": 'NotRequired[str]', "email": 'NotRequired[str]', "ip": 'NotRequired[str]', "device": 'NotRequired[str]', "enforced": 'NotRequired[bool]', "from": 'NotRequired[str]', "to": 'NotRequired[str]', "limit": 'NotRequired[int]', "after": 'NotRequired[str]'})
+
+
+RadarDecisionsListData: TypeAlias = 'list[RadarDecision]'
+
+
+class RadarListsAddBody(TypedDict):
+    #: `allow` or `deny`.
+    list: Literal["allow", "deny"]
+
+    #: `ip` (an address or CIDR range), `email`, `email_domain` or `device`.
+    kind: Literal["ip", "email", "email_domain", "device"]
+
+    #: The IP, range, address, domain or device id.
+    value: str
+
+    #: Why it is listed.
+    note: NotRequired[str | None]
+
+    #: When the entry stops applying (ISO 8601). Never, when omitted.
+    expires_at: NotRequired[str | None]
+
+
+class RadarListsListQuery(TypedDict):
+    #: `allow` or `deny`; both when omitted.
+    list: NotRequired[Literal["allow", "deny"]]
+
+    #: Only entries of this kind.
+    kind: NotRequired[Literal["ip", "email", "email_domain", "device"]]
+
+    #: Items per page, 1–100. Default 50.
+    limit: NotRequired[int]
+
+    #: The `next_cursor` of the previous page.
+    after: NotRequired[str]
+
+
+RadarListsListData: TypeAlias = 'list[RadarListEntry]'
+
+
+class RadarModeSetBody(TypedDict):
+    #: `monitor` or `enforce`.
+    mode: Literal["monitor", "enforce"]
+
+
+class RadarRulesCreateBodyConditionsItem(TypedDict):
+    #: The fact to test.
+    field: Literal["ip", "country", "asn", "as_organization", "is_hosting", "is_vpn", "is_proxy", "is_tor", "email", "email_domain", "disposable_email", "user_agent", "method", "new_device", "impossible_travel", "travel_kmh", "risk_score", "ip_attempts_1m", "ip_attempts_1h", "ip_distinct_emails_10m", "ip_failures_1h", "email_attempts_1h", "email_failures_1h", "device_attempts_1h"]
+
+    #: How to compare it. Which operators a field takes depends on its type.
+    operator: Literal["eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "contains", "not_contains", "starts_with", "ends_with", "in_cidr", "not_in_cidr"]
+
+    #: The one value to compare with, as text — `DK`, `20`, `true`. For every operator except the list ones.
+    value: NotRequired[str]
+
+    #: The values to compare with, for `in`, `not_in`, `in_cidr` and `not_in_cidr`.
+    values: NotRequired[list[str]]
+
+
+class RadarRulesCreateBody(TypedDict):
+    #: What the rule is for, as the console lists it.
+    name: str
+
+    #: Why the rule exists, for whoever reads it next.
+    description: NotRequired[str | None]
+
+    #: What happens when every condition holds: `allow` (skip every rule after this one), `challenge` (a second factor on sign-in; a CAPTCHA or an emailed code on sign-up) or `block`.
+    action: Literal["allow", "challenge", "block"]
+
+    #: `all` (the default), `sign_in` or `sign_up`.
+    applies_to: NotRequired[Literal["all", "sign_in", "sign_up"]]
+
+    #: Up to 10 conditions; the rule matches when EVERY one holds. A fact that is unknown (no IP intelligence, no address on a passkey sign-in) matches no condition.
+    conditions: list[RadarRulesCreateBodyConditionsItem]
+
+    #: Whether the rule is evaluated. Default true.
+    enabled: NotRequired[bool]
+
+    #: Where in the order to put it: 1 is evaluated first. Default: last.
+    position: NotRequired[int]
+
+
+class RadarRulesListQuery(TypedDict):
+    #: Rules per page, 1–100. Default 100 — an environment holds at most 100, so one page is all of them.
+    limit: NotRequired[int]
+
+    #: The `next_cursor` of the previous page.
+    after: NotRequired[str]
+
+
+RadarRulesListData: TypeAlias = 'list[RadarRule]'
+
+
+class RadarRulesReorderBody(TypedDict):
+    #: Every rule id, in the new order.
+    rule_ids: list[str]
+
+
+class RadarRulesUpdateBodyConditionsItem(TypedDict):
+    #: The fact to test.
+    field: Literal["ip", "country", "asn", "as_organization", "is_hosting", "is_vpn", "is_proxy", "is_tor", "email", "email_domain", "disposable_email", "user_agent", "method", "new_device", "impossible_travel", "travel_kmh", "risk_score", "ip_attempts_1m", "ip_attempts_1h", "ip_distinct_emails_10m", "ip_failures_1h", "email_attempts_1h", "email_failures_1h", "device_attempts_1h"]
+
+    #: How to compare it. Which operators a field takes depends on its type.
+    operator: Literal["eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "contains", "not_contains", "starts_with", "ends_with", "in_cidr", "not_in_cidr"]
+
+    #: The one value to compare with, as text — `DK`, `20`, `true`. For every operator except the list ones.
+    value: NotRequired[str]
+
+    #: The values to compare with, for `in`, `not_in`, `in_cidr` and `not_in_cidr`.
+    values: NotRequired[list[str]]
+
+
+class RadarRulesUpdateBody(TypedDict):
+    #: What the rule is for, as the console lists it.
+    name: NotRequired[str]
+
+    #: Why the rule exists, for whoever reads it next.
+    description: NotRequired[str | None]
+
+    #: What happens when every condition holds: `allow` (skip every rule after this one), `challenge` (a second factor on sign-in; a CAPTCHA or an emailed code on sign-up) or `block`.
+    action: NotRequired[Literal["allow", "challenge", "block"]]
+
+    #: `all` (the default), `sign_in` or `sign_up`.
+    applies_to: NotRequired[Literal["all", "sign_in", "sign_up"]]
+
+    #: Up to 10 conditions; the rule matches when EVERY one holds. A fact that is unknown (no IP intelligence, no address on a passkey sign-in) matches no condition.
+    conditions: NotRequired[list[RadarRulesUpdateBodyConditionsItem]]
+
+    #: Whether the rule is evaluated. Default true.
+    enabled: NotRequired[bool]
+
+    #: Where in the order to put it: 1 is evaluated first. Default: last.
+    position: NotRequired[int]
+
+
+class RadarSettingsUpdateBody(TypedDict):
+    #: Rule key => `{"enabled": bool, "action": "allow"|"challenge"|"block", "threshold": int}`, each part optional. Keys: credential_stuffing, bot_velocity, account_attack, impossible_travel, new_device, anonymous_network, hosting_network, disposable_email, risk_score_reject, risk_score_elevated.
+    builtin_rules: dict[str, Any]
 
 
 class RolesCreateBody(TypedDict):
@@ -2549,6 +3596,17 @@ class SigninPolicyUpdateBody(TypedDict):
 class SigninSelfServiceSignupSetBody(TypedDict):
     #: On: anyone may create an account and their own organization. Off: people join by invitation.
     enabled: bool
+
+
+class SigninSmsUpdateBody(TypedDict):
+    #: Accept text messages as a second factor in this environment. Off by default: SMS is the weakest factor offered.
+    enabled: NotRequired[bool]
+
+    #: ISO 3166-1 alpha-2 countries whose numbers may enrol and be texted. Required to be non-empty while SMS is on: which countries you text is your toll-fraud exposure.
+    allowed_countries: NotRequired[list[Literal["AC", "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AR", "AS", "AT", "AU", "AW", "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BM", "BN", "BO", "BR", "BS", "BT", "BW", "BY", "BZ", "CA", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CR", "CU", "CV", "CW", "CY", "CZ", "DE", "DJ", "DK", "DM", "DO", "DZ", "EC", "EE", "EG", "ER", "ES", "ET", "FI", "FJ", "FK", "FM", "FO", "FR", "GA", "GB", "GD", "GE", "GF", "GH", "GI", "GL", "GM", "GN", "GP", "GQ", "GR", "GT", "GU", "GW", "GY", "HK", "HN", "HR", "HT", "HU", "ID", "IE", "IL", "IN", "IO", "IQ", "IR", "IS", "IT", "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN", "KP", "KR", "KW", "KY", "KZ", "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY", "MA", "MC", "MD", "ME", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ", "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU", "NZ", "OM", "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PR", "PS", "PT", "PW", "PY", "QA", "RE", "RO", "RS", "RU", "RW", "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SK", "SL", "SM", "SN", "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ", "TC", "TD", "TG", "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ", "UA", "UG", "US", "UY", "UZ", "VC", "VE", "VG", "VI", "VN", "VU", "WF", "WS", "XK", "YE", "ZA", "ZM", "ZW"]]]
+
+    #: Administrators may add SMS only beside an authenticator app or a passkey, and are asked to enrol one if SMS is all they hold. On by default.
+    privileged_need_stronger_factor: NotRequired[bool]
 
 
 class SigninSocialDeleteBody(TypedDict):
@@ -3009,7 +4067,7 @@ class WebhooksCreateBody(TypedDict):
     url: str
 
     #: The events it receives.
-    event_types: list[Literal["user.created", "user.updated", "user.deactivated", "user.login", "user.reactivated", "identity.linked", "user.erased", "organization.created", "organization.suspended", "organization.reactivated", "organization.updated", "organization.deleted", "membership.created", "membership.updated", "membership.deleted", "invitation.created", "invitation.accepted", "invitation.revoked", "role.assigned", "role.unassigned", "role.assigned_everywhere", "role.unassigned_everywhere", "api_key.created", "api_key.revoked", "support_session.started", "directory.user.provisioned", "directory.user.deprovisioned", "directory.user.deactivated", "directory.group.membership_changed", "domain.added", "domain.removed", "domain.verified", "connection.activated", "connection.certificate_expiring", "entitlement.set", "entitlement.updated", "entitlement.revoked", "vault.grant.created", "vault.grant.revoked", "vault.secret.revoked", "governance.access.revoked"]]
+    event_types: list[Literal["user.created", "user.updated", "user.deactivated", "user.login", "user.reactivated", "identity.linked", "user.erased", "organization.created", "organization.suspended", "organization.reactivated", "organization.updated", "organization.deleted", "membership.created", "membership.updated", "membership.deleted", "invitation.created", "invitation.accepted", "invitation.revoked", "role.assigned", "role.unassigned", "role.assigned_everywhere", "role.unassigned_everywhere", "api_key.created", "api_key.revoked", "support_session.started", "directory.user.provisioned", "directory.user.deprovisioned", "directory.user.deactivated", "directory.group.membership_changed", "domain.added", "domain.removed", "domain.verified", "connection.activated", "connection.certificate_expiring", "entitlement.set", "entitlement.updated", "entitlement.revoked", "vault.grant.created", "vault.grant.revoked", "vault.secret.revoked", "pipe.connection.connected", "pipe.connection.needs_reauth", "pipe.connection.disconnected", "governance.access.revoked", "feature_flag.created", "feature_flag.updated", "feature_flag.deleted"]]
 
     #: How deliveries are signed: `cbox` (X-Cbox-Signature, the default) or `standard_webhooks` (webhook-id / webhook-timestamp / webhook-signature, verifiable with any Standard Webhooks library; the secret is a `whsec_` secret).
     signature_scheme: NotRequired[Literal["cbox", "standard_webhooks"]]
@@ -3104,12 +4162,16 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "branding.whitelabel.set": OperationSpec(action="branding.whitelabel.set", operation_id="branding_whitelabel_set", method="PUT", path="/branding/whitelabel", path_params=(), scope="branding:write", danger="write", approval=True, body=True, pagination=None),
     "directories.connect": OperationSpec(action="directories.connect", operation_id="directories_connect", method="POST", path="/directories/connect", path_params=(), scope="directory_sync:write", danger="critical", approval=True, body=True, pagination=None),
     "directories.create": OperationSpec(action="directories.create", operation_id="directories_create", method="POST", path="/directories", path_params=(), scope="directory_sync:write", danger="critical", approval=True, body=True, pagination=None),
+    "directories.credentials.replace": OperationSpec(action="directories.credentials.replace", operation_id="directories_credentials_replace", method="PUT", path="/directories/{id}/credentials", path_params=("id",), scope="directory_sync:write", danger="critical", approval=True, body=True, pagination=None),
     "directories.delete": OperationSpec(action="directories.delete", operation_id="directories_delete", method="DELETE", path="/directories/{id}", path_params=("id",), scope="directory_sync:write", danger="destructive", approval=True, body=True, pagination=None),
     "directories.get": OperationSpec(action="directories.get", operation_id="directories_get", method="GET", path="/directories/{id}", path_params=("id",), scope="directory_sync:read", danger="read", approval=True, body=False, pagination=None),
     "directories.groups.list": OperationSpec(action="directories.groups.list", operation_id="directories_groups_list", method="GET", path="/directories/{id}/groups", path_params=("id",), scope="directory_sync:read", danger="read", approval=True, body=False, pagination="cursor"),
     "directories.groups.map": OperationSpec(action="directories.groups.map", operation_id="directories_groups_map", method="POST", path="/directories/{id}/group-roles", path_params=("id",), scope="directory_sync:write", danger="write", approval=True, body=True, pagination=None),
+    "directories.hris.connect": OperationSpec(action="directories.hris.connect", operation_id="directories_hris_connect", method="POST", path="/directories/hris", path_params=(), scope="directory_sync:write", danger="critical", approval=True, body=True, pagination=None),
     "directories.list": OperationSpec(action="directories.list", operation_id="directories_list", method="GET", path="/directories", path_params=(), scope="directory_sync:read", danger="read", approval=True, body=False, pagination="cursor"),
     "directories.status.set": OperationSpec(action="directories.status.set", operation_id="directories_status_set", method="POST", path="/directories/{id}/status", path_params=("id",), scope="directory_sync:write", danger="write", approval=True, body=True, pagination=None),
+    "directories.sync": OperationSpec(action="directories.sync", operation_id="directories_sync", method="POST", path="/directories/{id}/sync", path_params=("id",), scope="directory_sync:write", danger="write", approval=True, body=True, pagination=None),
+    "directories.sync_settings.update": OperationSpec(action="directories.sync_settings.update", operation_id="directories_sync_settings_update", method="PATCH", path="/directories/{id}/sync-settings", path_params=("id",), scope="directory_sync:write", danger="write", approval=True, body=True, pagination=None),
     "directories.token.rotate": OperationSpec(action="directories.token.rotate", operation_id="directories_token_rotate", method="POST", path="/directories/{id}/rotate", path_params=("id",), scope="directory_sync:write", danger="critical", approval=True, body=True, pagination=None),
     "directories.update": OperationSpec(action="directories.update", operation_id="directories_update", method="PATCH", path="/directories/{id}", path_params=("id",), scope="directory_sync:write", danger="write", approval=True, body=True, pagination=None),
     "domains.add": OperationSpec(action="domains.add", operation_id="domains_add", method="POST", path="/domains", path_params=(), scope="domains:write", danger="write", approval=True, body=True, pagination=None),
@@ -3117,6 +4179,22 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "domains.remove": OperationSpec(action="domains.remove", operation_id="domains_remove", method="DELETE", path="/domains", path_params=(), scope="domains:write", danger="destructive", approval=True, body=False, pagination=None),
     "domains.verify": OperationSpec(action="domains.verify", operation_id="domains_verify", method="POST", path="/domains/verify", path_params=(), scope="domains:write", danger="write", approval=True, body=False, pagination=None),
     "events.list": OperationSpec(action="events.list", operation_id="events_list", method="GET", path="/events", path_params=(), scope="events:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "feature_flags.create": OperationSpec(action="feature_flags.create", operation_id="feature_flags_create", method="POST", path="/feature-flags", path_params=(), scope="feature_flags:write", danger="write", approval=True, body=True, pagination=None),
+    "feature_flags.delete": OperationSpec(action="feature_flags.delete", operation_id="feature_flags_delete", method="DELETE", path="/feature-flags/{id}", path_params=("id",), scope="feature_flags:write", danger="destructive", approval=True, body=False, pagination=None),
+    "feature_flags.evaluate": OperationSpec(action="feature_flags.evaluate", operation_id="feature_flags_evaluate", method="GET", path="/feature-flags/evaluate", path_params=(), scope="feature_flags:read", danger="read", approval=True, body=False, pagination=None),
+    "feature_flags.get": OperationSpec(action="feature_flags.get", operation_id="feature_flags_get", method="GET", path="/feature-flags/{id}", path_params=("id",), scope="feature_flags:read", danger="read", approval=True, body=False, pagination=None),
+    "feature_flags.list": OperationSpec(action="feature_flags.list", operation_id="feature_flags_list", method="GET", path="/feature-flags", path_params=(), scope="feature_flags:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "feature_flags.update": OperationSpec(action="feature_flags.update", operation_id="feature_flags_update", method="PATCH", path="/feature-flags/{id}", path_params=("id",), scope="feature_flags:write", danger="write", approval=True, body=True, pagination=None),
+    "fga.check": OperationSpec(action="fga.check", operation_id="fga_check", method="GET", path="/fga/check", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination=None),
+    "fga.check_batch": OperationSpec(action="fga.check_batch", operation_id="fga_check_batch", method="GET", path="/fga/check/batch", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination=None),
+    "fga.resources.list": OperationSpec(action="fga.resources.list", operation_id="fga_resources_list", method="GET", path="/fga/resources", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "fga.schema.get": OperationSpec(action="fga.schema.get", operation_id="fga_schema_get", method="GET", path="/fga/schema", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination=None),
+    "fga.schema.update": OperationSpec(action="fga.schema.update", operation_id="fga_schema_update", method="PUT", path="/fga/schema", path_params=(), scope="fga:schema", danger="critical", approval=True, body=True, pagination=None),
+    "fga.schema.validate": OperationSpec(action="fga.schema.validate", operation_id="fga_schema_validate", method="GET", path="/fga/schema/validate", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination=None),
+    "fga.subjects.list": OperationSpec(action="fga.subjects.list", operation_id="fga_subjects_list", method="GET", path="/fga/subjects", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "fga.tuples.delete": OperationSpec(action="fga.tuples.delete", operation_id="fga_tuples_delete", method="POST", path="/fga/tuples/delete", path_params=(), scope="fga:write", danger="destructive", approval=True, body=True, pagination=None),
+    "fga.tuples.list": OperationSpec(action="fga.tuples.list", operation_id="fga_tuples_list", method="GET", path="/fga/tuples", path_params=(), scope="fga:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "fga.tuples.write": OperationSpec(action="fga.tuples.write", operation_id="fga_tuples_write", method="POST", path="/fga/tuples", path_params=(), scope="fga:write", danger="write", approval=True, body=True, pagination=None),
     "frontend_keys.create": OperationSpec(action="frontend_keys.create", operation_id="frontend_keys_create", method="POST", path="/frontend-keys", path_params=(), scope="frontend_keys:write", danger="write", approval=True, body=True, pagination=None),
     "frontend_keys.list": OperationSpec(action="frontend_keys.list", operation_id="frontend_keys_list", method="GET", path="/frontend-keys", path_params=(), scope="frontend_keys:read", danger="read", approval=True, body=False, pagination="cursor"),
     "frontend_keys.revoke": OperationSpec(action="frontend_keys.revoke", operation_id="frontend_keys_revoke", method="DELETE", path="/frontend-keys/{id}", path_params=("id",), scope="frontend_keys:write", danger="destructive", approval=True, body=False, pagination=None),
@@ -3171,11 +4249,34 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "permissions.delete": OperationSpec(action="permissions.delete", operation_id="permissions_delete", method="DELETE", path="/permissions/{id}", path_params=("id",), scope="role_definitions:write", danger="destructive", approval=True, body=False, pagination=None),
     "permissions.list": OperationSpec(action="permissions.list", operation_id="permissions_list", method="GET", path="/permissions", path_params=(), scope="roles:read", danger="read", approval=True, body=False, pagination="cursor"),
     "permissions.update": OperationSpec(action="permissions.update", operation_id="permissions_update", method="PATCH", path="/permissions/{id}", path_params=("id",), scope="role_definitions:write", danger="write", approval=True, body=True, pagination=None),
+    "pipes.connections.delete": OperationSpec(action="pipes.connections.delete", operation_id="pipes_connections_delete", method="DELETE", path="/pipes/{id}/connections/{connection_id}", path_params=("id", "connection_id"), scope="pipes:write", danger="destructive", approval=True, body=False, pagination=None),
+    "pipes.connections.list": OperationSpec(action="pipes.connections.list", operation_id="pipes_connections_list", method="GET", path="/pipes/{id}/connections", path_params=("id",), scope="pipes:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "pipes.create": OperationSpec(action="pipes.create", operation_id="pipes_create", method="POST", path="/pipes", path_params=(), scope="pipes:write", danger="write", approval=True, body=True, pagination=None),
+    "pipes.delete": OperationSpec(action="pipes.delete", operation_id="pipes_delete", method="DELETE", path="/pipes/{id}", path_params=("id",), scope="pipes:write", danger="destructive", approval=True, body=False, pagination=None),
+    "pipes.get": OperationSpec(action="pipes.get", operation_id="pipes_get", method="GET", path="/pipes/{id}", path_params=("id",), scope="pipes:read", danger="read", approval=True, body=False, pagination=None),
+    "pipes.grants.create": OperationSpec(action="pipes.grants.create", operation_id="pipes_grants_create", method="POST", path="/pipes/{id}/grants", path_params=("id",), scope="pipes:write", danger="critical", approval=True, body=True, pagination=None),
+    "pipes.grants.delete": OperationSpec(action="pipes.grants.delete", operation_id="pipes_grants_delete", method="DELETE", path="/pipes/{id}/grants/{client_id}", path_params=("id", "client_id"), scope="pipes:write", danger="destructive", approval=True, body=False, pagination=None),
+    "pipes.list": OperationSpec(action="pipes.list", operation_id="pipes_list", method="GET", path="/pipes", path_params=(), scope="pipes:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "pipes.update": OperationSpec(action="pipes.update", operation_id="pipes_update", method="PATCH", path="/pipes/{id}", path_params=("id",), scope="pipes:write", danger="write", approval=True, body=True, pagination=None),
     "provisioning.targets.create": OperationSpec(action="provisioning.targets.create", operation_id="provisioning_targets_create", method="POST", path="/provisioning-targets", path_params=(), scope="provisioning:write", danger="critical", approval=True, body=True, pagination=None),
     "provisioning.targets.delete": OperationSpec(action="provisioning.targets.delete", operation_id="provisioning_targets_delete", method="DELETE", path="/provisioning-targets/{id}", path_params=("id",), scope="provisioning:write", danger="destructive", approval=True, body=True, pagination=None),
     "provisioning.targets.get": OperationSpec(action="provisioning.targets.get", operation_id="provisioning_targets_get", method="GET", path="/provisioning-targets/{id}", path_params=("id",), scope="provisioning:read", danger="read", approval=True, body=False, pagination=None),
     "provisioning.targets.list": OperationSpec(action="provisioning.targets.list", operation_id="provisioning_targets_list", method="GET", path="/provisioning-targets", path_params=(), scope="provisioning:read", danger="read", approval=True, body=False, pagination="cursor"),
     "provisioning.targets.status.set": OperationSpec(action="provisioning.targets.status.set", operation_id="provisioning_targets_status_set", method="POST", path="/provisioning-targets/{id}/status", path_params=("id",), scope="provisioning:write", danger="write", approval=True, body=True, pagination=None),
+    "radar.decisions.get": OperationSpec(action="radar.decisions.get", operation_id="radar_decisions_get", method="GET", path="/radar/decisions/{id}", path_params=("id",), scope="radar:read", danger="read", approval=True, body=False, pagination=None),
+    "radar.decisions.list": OperationSpec(action="radar.decisions.list", operation_id="radar_decisions_list", method="GET", path="/radar/decisions", path_params=(), scope="radar:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "radar.lists.add": OperationSpec(action="radar.lists.add", operation_id="radar_lists_add", method="POST", path="/radar/lists", path_params=(), scope="radar:write", danger="write", approval=True, body=True, pagination=None),
+    "radar.lists.list": OperationSpec(action="radar.lists.list", operation_id="radar_lists_list", method="GET", path="/radar/lists", path_params=(), scope="radar:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "radar.lists.remove": OperationSpec(action="radar.lists.remove", operation_id="radar_lists_remove", method="DELETE", path="/radar/lists/{id}", path_params=("id",), scope="radar:write", danger="destructive", approval=True, body=False, pagination=None),
+    "radar.mode.set": OperationSpec(action="radar.mode.set", operation_id="radar_mode_set", method="PUT", path="/radar/mode", path_params=(), scope="radar:manage", danger="critical", approval=True, body=True, pagination=None),
+    "radar.rules.create": OperationSpec(action="radar.rules.create", operation_id="radar_rules_create", method="POST", path="/radar/rules", path_params=(), scope="radar:write", danger="write", approval=True, body=True, pagination=None),
+    "radar.rules.delete": OperationSpec(action="radar.rules.delete", operation_id="radar_rules_delete", method="DELETE", path="/radar/rules/{id}", path_params=("id",), scope="radar:write", danger="destructive", approval=True, body=False, pagination=None),
+    "radar.rules.get": OperationSpec(action="radar.rules.get", operation_id="radar_rules_get", method="GET", path="/radar/rules/{id}", path_params=("id",), scope="radar:read", danger="read", approval=True, body=False, pagination=None),
+    "radar.rules.list": OperationSpec(action="radar.rules.list", operation_id="radar_rules_list", method="GET", path="/radar/rules", path_params=(), scope="radar:read", danger="read", approval=True, body=False, pagination="cursor"),
+    "radar.rules.reorder": OperationSpec(action="radar.rules.reorder", operation_id="radar_rules_reorder", method="PUT", path="/radar/rules/order", path_params=(), scope="radar:write", danger="write", approval=True, body=True, pagination=None),
+    "radar.rules.update": OperationSpec(action="radar.rules.update", operation_id="radar_rules_update", method="PATCH", path="/radar/rules/{id}", path_params=("id",), scope="radar:write", danger="write", approval=True, body=True, pagination=None),
+    "radar.settings.get": OperationSpec(action="radar.settings.get", operation_id="radar_settings_get", method="GET", path="/radar/settings", path_params=(), scope="radar:read", danger="read", approval=True, body=False, pagination=None),
+    "radar.settings.update": OperationSpec(action="radar.settings.update", operation_id="radar_settings_update", method="PATCH", path="/radar/settings", path_params=(), scope="radar:write", danger="write", approval=True, body=True, pagination=None),
     "roles.create": OperationSpec(action="roles.create", operation_id="roles_create", method="POST", path="/roles", path_params=(), scope="role_definitions:write", danger="write", approval=True, body=True, pagination=None),
     "roles.delete": OperationSpec(action="roles.delete", operation_id="roles_delete", method="DELETE", path="/roles/{id}", path_params=("id",), scope="role_definitions:write", danger="destructive", approval=True, body=False, pagination=None),
     "roles.get": OperationSpec(action="roles.get", operation_id="roles_get", method="GET", path="/roles/{id}", path_params=("id",), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
@@ -3192,6 +4293,8 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "signin.policy.inherit": OperationSpec(action="signin.policy.inherit", operation_id="signin_policy_inherit", method="DELETE", path="/sign-in/policy/organizations/{organization_id}", path_params=("organization_id",), scope="signin:write", danger="critical", approval=True, body=False, pagination=None),
     "signin.policy.update": OperationSpec(action="signin.policy.update", operation_id="signin_policy_update", method="PATCH", path="/sign-in/policy", path_params=(), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
     "signin.self_service_signup.set": OperationSpec(action="signin.self_service_signup.set", operation_id="signin_self_service_signup_set", method="PUT", path="/sign-in/self-service-signup", path_params=(), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
+    "signin.sms.get": OperationSpec(action="signin.sms.get", operation_id="signin_sms_get", method="GET", path="/sign-in/sms", path_params=(), scope="signin:read", danger="read", approval=True, body=False, pagination=None),
+    "signin.sms.update": OperationSpec(action="signin.sms.update", operation_id="signin_sms_update", method="PATCH", path="/sign-in/sms", path_params=(), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
     "signin.social.delete": OperationSpec(action="signin.social.delete", operation_id="signin_social_delete", method="DELETE", path="/sign-in/social-providers/{id}", path_params=("id",), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
     "signin.social.list": OperationSpec(action="signin.social.list", operation_id="signin_social_list", method="GET", path="/sign-in/social-providers", path_params=(), scope="signin:read", danger="read", approval=True, body=False, pagination="cursor"),
     "signin.social.set": OperationSpec(action="signin.social.set", operation_id="signin_social_set", method="POST", path="/sign-in/social-providers", path_params=(), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
@@ -3236,6 +4339,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "users.get": OperationSpec(action="users.get", operation_id="users_get", method="GET", path="/users/{id}", path_params=("id",), scope="users:read", danger="read", approval=True, body=False, pagination=None),
     "users.list": OperationSpec(action="users.list", operation_id="users_list", method="GET", path="/users", path_params=(), scope="users:read", danger="read", approval=True, body=False, pagination="cursor"),
     "users.mfa.reset": OperationSpec(action="users.mfa.reset", operation_id="users_mfa_reset", method="DELETE", path="/users/{id}/mfa", path_params=("id",), scope="users:write", danger="critical", approval=True, body=False, pagination=None),
+    "users.mfa.sms.remove": OperationSpec(action="users.mfa.sms.remove", operation_id="users_mfa_sms_remove", method="DELETE", path="/users/{id}/mfa/sms", path_params=("id",), scope="users:write", danger="critical", approval=True, body=False, pagination=None),
     "users.password.set": OperationSpec(action="users.password.set", operation_id="users_password_set", method="POST", path="/users/{id}/password", path_params=("id",), scope="users:write", danger="critical", approval=True, body=True, pagination=None),
     "users.password_reset.send": OperationSpec(action="users.password_reset.send", operation_id="users_password_reset_send", method="POST", path="/users/{id}/password-reset", path_params=("id",), scope="users:write", danger="write", approval=True, body=False, pagination=None),
     "users.reactivate": OperationSpec(action="users.reactivate", operation_id="users_reactivate", method="POST", path="/users/{id}/reactivate", path_params=("id",), scope="users:write", danger="write", approval=True, body=False, pagination=None),
@@ -4366,6 +5470,30 @@ class BrandingMethods:
         self.whitelabel = BrandingWhitelabelMethods(core)
 
 
+class DirectoriesCredentialsMethods:
+    """``directories.credentials.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def replace(self, id: str, body: DirectoriesCredentialsReplaceBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory]: ...
+
+    @overload
+    def replace(self, id: str, body: DirectoriesCredentialsReplaceBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]: ...
+
+    def replace(self, id: str, body: DirectoriesCredentialsReplaceBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]:
+        """Replace a pull directory's provider credentials, verifying the new ones first. Write-only; never returned.
+
+        Requires scope `directory_sync:write`. Danger: critical.
+
+        ``PUT /directories/{id}/credentials`` · action ``directories.credentials.replace``
+        Scope ``directory_sync:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["directories.credentials.replace"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 class DirectoriesGroupsMethods:
     """``directories.groups.*``"""
 
@@ -4411,6 +5539,30 @@ class DirectoriesGroupsMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["directories.groups.map"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class DirectoriesHrisMethods:
+    """``directories.hris.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def connect(self, body: DirectoriesHrisConnectBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory]: ...
+
+    @overload
+    def connect(self, body: DirectoriesHrisConnectBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]: ...
+
+    def connect(self, body: DirectoriesHrisConnectBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]:
+        """Connect an HR system (Workday, BambooHR, Rippling, HiBob or Personio) to sync an organization's people from, verifying the credentials first. The first sync is queued.
+
+        Requires scope `directory_sync:write`. Danger: critical.
+
+        ``POST /directories/hris`` · action ``directories.hris.connect``
+        Scope ``directory_sync:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["directories.hris.connect"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 class DirectoriesStatusMethods:
     """``directories.status.*``"""
 
@@ -4433,6 +5585,30 @@ class DirectoriesStatusMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["directories.status.set"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class DirectoriesSyncSettingsMethods:
+    """``directories.sync_settings.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def update(self, id: str, body: DirectoriesSyncSettingsUpdateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory]: ...
+
+    @overload
+    def update(self, id: str, body: DirectoriesSyncSettingsUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]: ...
+
+    def update(self, id: str, body: DirectoriesSyncSettingsUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]:
+        """Set how often a pull directory syncs, and for an HR system which of its fields pass through onto people.
+
+        Requires scope `directory_sync:write`. Danger: write.
+
+        ``PATCH /directories/{id}/sync-settings`` · action ``directories.sync_settings.update``
+        Scope ``directory_sync:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["directories.sync_settings.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
 class DirectoriesTokenMethods:
@@ -4464,8 +5640,11 @@ class DirectoriesMethods:
 
     def __init__(self, core: ManagementTransport) -> None:
         self._core = core
+        self.credentials = DirectoriesCredentialsMethods(core)
         self.groups = DirectoriesGroupsMethods(core)
+        self.hris = DirectoriesHrisMethods(core)
         self.status = DirectoriesStatusMethods(core)
+        self.sync_settings = DirectoriesSyncSettingsMethods(core)
         self.token = DirectoriesTokenMethods(core)
 
     @overload
@@ -4556,6 +5735,23 @@ class DirectoriesMethods:
     def list_all(self, query: DirectoriesListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[Directory]:
         """Every item of ``directories.list``, fetching pages as the iteration reaches them."""
         return self._core.paginate(ENVIRONMENT_OPERATIONS["directories.list"], (), query, headers=headers)
+
+    @overload
+    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory]: ...
+
+    @overload
+    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]: ...
+
+    def sync(self, id: str, body: DirectoriesSyncBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory] | PendingApprovalResult[Directory]:
+        """Pull a Google Workspace, Microsoft Entra or HR-system directory now, on a worker. `full` asks an HR system for everybody rather than what changed.
+
+        Requires scope `directory_sync:write`. Danger: write.
+
+        ``POST /directories/{id}/sync`` · action ``directories.sync``
+        Scope ``directory_sync:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["directories.sync"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
     def update(self, id: str, body: DirectoriesUpdateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Directory]: ...
@@ -4676,6 +5872,340 @@ class EventsMethods:
     def list_all(self, query: EventsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[DomainEvent]:
         """Every item of ``events.list``, fetching pages as the iteration reaches them."""
         return self._core.paginate(ENVIRONMENT_OPERATIONS["events.list"], (), query, headers=headers)
+
+
+class FeatureFlagsMethods:
+    """``feature_flags.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def create(self, body: FeatureFlagsCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag]: ...
+
+    @overload
+    def create(self, body: FeatureFlagsCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag] | PendingApprovalResult[FeatureFlag]: ...
+
+    def create(self, body: FeatureFlagsCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag] | PendingApprovalResult[FeatureFlag]:
+        """Define a feature flag: a key apps ask about, its default, and who it is on for — named users, named organizations, a rollout percentage.
+
+        Requires scope `feature_flags:write`. Danger: write.
+
+        ``POST /feature-flags`` · action ``feature_flags.create``
+        Scope ``feature_flags:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["feature_flags.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def delete(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def delete(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def delete(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Delete a feature flag and its rules. Its key evaluates to off from now on; tokens already minted keep it until they expire.
+
+        Requires scope `feature_flags:write`. Danger: destructive.
+
+        ``DELETE /feature-flags/{id}`` · action ``feature_flags.delete``
+        Scope ``feature_flags:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["feature_flags.delete"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def evaluate(self, query: FeatureFlagsEvaluateQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlagEvaluation]: ...
+
+    @overload
+    def evaluate(self, query: FeatureFlagsEvaluateQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlagEvaluation] | PendingApprovalResult[FeatureFlagEvaluation]: ...
+
+    def evaluate(self, query: FeatureFlagsEvaluateQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlagEvaluation] | PendingApprovalResult[FeatureFlagEvaluation]:
+        """Evaluate every feature flag for a user in an organization: whether each is on, and the rule that decided. For app backends without a token in hand.
+
+        Requires scope `feature_flags:read`. Danger: read.
+
+        ``GET /feature-flags/evaluate`` · action ``feature_flags.evaluate``
+        Scope ``feature_flags:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["feature_flags.evaluate"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def get(self, id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag]: ...
+
+    @overload
+    def get(self, id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag] | PendingApprovalResult[FeatureFlag]: ...
+
+    def get(self, id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag] | PendingApprovalResult[FeatureFlag]:
+        """Read one feature flag: its default, whether it is switched on, and every user, organization and rollout rule.
+
+        Requires scope `feature_flags:read`. Danger: read.
+
+        ``GET /feature-flags/{id}`` · action ``feature_flags.get``
+        Scope ``feature_flags:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["feature_flags.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, query: FeatureFlagsListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlagsListData]: ...
+
+    @overload
+    def list(self, query: FeatureFlagsListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlagsListData] | PendingApprovalResult[FeatureFlagsListData]: ...
+
+    def list(self, query: FeatureFlagsListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlagsListData] | PendingApprovalResult[FeatureFlagsListData]:
+        """List this environment's feature flags with their default, kill switch and targeting rules.
+
+        Requires scope `feature_flags:read`. Danger: read.
+
+        ``GET /feature-flags`` · action ``feature_flags.list``
+        Scope ``feature_flags:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["feature_flags.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, query: FeatureFlagsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[FeatureFlag]:
+        """Every item of ``feature_flags.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["feature_flags.list"], (), query, headers=headers)
+
+    @overload
+    def update(self, id: str, body: FeatureFlagsUpdateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag]: ...
+
+    @overload
+    def update(self, id: str, body: FeatureFlagsUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag] | PendingApprovalResult[FeatureFlag]: ...
+
+    def update(self, id: str, body: FeatureFlagsUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FeatureFlag] | PendingApprovalResult[FeatureFlag]:
+        """Change a feature flag: switch it on or off for everyone, change its default, or replace its user rules, organization rules or rollout percentage.
+
+        Requires scope `feature_flags:write`. Danger: write.
+
+        ``PATCH /feature-flags/{id}`` · action ``feature_flags.update``
+        Scope ``feature_flags:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["feature_flags.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class FgaResourcesMethods:
+    """``fga.resources.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def list(self, query: FgaResourcesListQuery, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaResourcesListData]: ...
+
+    @overload
+    def list(self, query: FgaResourcesListQuery, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaResourcesListData] | PendingApprovalResult[FgaResourcesListData]: ...
+
+    def list(self, query: FgaResourcesListQuery, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaResourcesListData] | PendingApprovalResult[FgaResourcesListData]:
+        """List the resources of one type a subject has a relation on (e.g. every document alice can view), through all inheritance; sorted ids, paged with after.
+
+        Requires scope `fga:read`. Danger: read.
+
+        ``GET /fga/resources`` · action ``fga.resources.list``
+        Scope ``fga:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.resources.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, query: FgaResourcesListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[FgaObject]:
+        """Every item of ``fga.resources.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["fga.resources.list"], (), query, headers=headers)
+
+
+class FgaSchemaMethods:
+    """``fga.schema.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def get(self, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchema]: ...
+
+    @overload
+    def get(self, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchema] | PendingApprovalResult[FgaSchema]: ...
+
+    def get(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchema] | PendingApprovalResult[FgaSchema]:
+        """Read this environment's fine-grained authorization schema: the source text, its parsed types and relations, its version, and the current consistency token.
+
+        Requires scope `fga:read`. Danger: read.
+
+        ``GET /fga/schema`` · action ``fga.schema.get``
+        Scope ``fga:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.schema.get"], (), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def update(self, body: FgaSchemaUpdateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchema]: ...
+
+    @overload
+    def update(self, body: FgaSchemaUpdateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchema] | PendingApprovalResult[FgaSchema]: ...
+
+    def update(self, body: FgaSchemaUpdateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchema] | PendingApprovalResult[FgaSchema]:
+        """Replace this environment's fine-grained authorization schema (types, relations and how each is decided). Changes the answer to every check at once; refused if invalid or if existing tuples would no longer fit.
+
+        Requires scope `fga:schema`. Danger: critical.
+
+        ``PUT /fga/schema`` · action ``fga.schema.update``
+        Scope ``fga:schema`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.schema.update"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def validate(self, query: FgaSchemaValidateQuery, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchemaValidation]: ...
+
+    @overload
+    def validate(self, query: FgaSchemaValidateQuery, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchemaValidation] | PendingApprovalResult[FgaSchemaValidation]: ...
+
+    def validate(self, query: FgaSchemaValidateQuery, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSchemaValidation] | PendingApprovalResult[FgaSchemaValidation]:
+        """Check a fine-grained authorization schema without saving it: every error by line, or the parsed types and canonical text.
+
+        Requires scope `fga:read`. Danger: read.
+
+        ``GET /fga/schema/validate`` · action ``fga.schema.validate``
+        Scope ``fga:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.schema.validate"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+
+class FgaSubjectsMethods:
+    """``fga.subjects.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def list(self, query: FgaSubjectsListQuery, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSubjectsListData]: ...
+
+    @overload
+    def list(self, query: FgaSubjectsListQuery, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSubjectsListData] | PendingApprovalResult[FgaSubjectsListData]: ...
+
+    def list(self, query: FgaSubjectsListQuery, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaSubjectsListData] | PendingApprovalResult[FgaSubjectsListData]:
+        """List the subjects of one type that have a relation on a resource (e.g. every user who can view the readme), groups and inheritance expanded; sorted ids, paged with after.
+
+        Requires scope `fga:read`. Danger: read.
+
+        ``GET /fga/subjects`` · action ``fga.subjects.list``
+        Scope ``fga:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.subjects.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, query: FgaSubjectsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[FgaObject]:
+        """Every item of ``fga.subjects.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["fga.subjects.list"], (), query, headers=headers)
+
+
+class FgaTuplesMethods:
+    """``fga.tuples.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def delete(self, body: FgaTuplesDeleteBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTupleWrite]: ...
+
+    @overload
+    def delete(self, body: FgaTuplesDeleteBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTupleWrite] | PendingApprovalResult[FgaTupleWrite]: ...
+
+    def delete(self, body: FgaTuplesDeleteBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTupleWrite] | PendingApprovalResult[FgaTupleWrite]:
+        """Delete 1–100 relationship tuples in one atomic batch. Revokes the access they granted, and everything inherited through them, at once.
+
+        Requires scope `fga:write`. Danger: destructive.
+
+        ``POST /fga/tuples/delete`` · action ``fga.tuples.delete``
+        Scope ``fga:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.tuples.delete"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, query: FgaTuplesListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTuplesListData]: ...
+
+    @overload
+    def list(self, query: FgaTuplesListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTuplesListData] | PendingApprovalResult[FgaTuplesListData]: ...
+
+    def list(self, query: FgaTuplesListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTuplesListData] | PendingApprovalResult[FgaTuplesListData]:
+        """List stored relationship tuples oldest first, filtered by resource type and id, relation and subject; pass next_cursor as after to page.
+
+        Requires scope `fga:read`. Danger: read.
+
+        ``GET /fga/tuples`` · action ``fga.tuples.list``
+        Scope ``fga:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.tuples.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, query: FgaTuplesListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[FgaTuple]:
+        """Every item of ``fga.tuples.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["fga.tuples.list"], (), query, headers=headers)
+
+    @overload
+    def write(self, body: FgaTuplesWriteBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTupleWrite]: ...
+
+    @overload
+    def write(self, body: FgaTuplesWriteBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTupleWrite] | PendingApprovalResult[FgaTupleWrite]: ...
+
+    def write(self, body: FgaTuplesWriteBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaTupleWrite] | PendingApprovalResult[FgaTupleWrite]:
+        """Write 1–100 relationship tuples (resource#relation@subject) in one atomic batch, each checked against the schema. Grants access at once; returns a consistency_token for checks that must see it.
+
+        Requires scope `fga:write`. Danger: write.
+
+        ``POST /fga/tuples`` · action ``fga.tuples.write``
+        Scope ``fga:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.tuples.write"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class FgaMethods:
+    """``fga.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.resources = FgaResourcesMethods(core)
+        self.schema = FgaSchemaMethods(core)
+        self.subjects = FgaSubjectsMethods(core)
+        self.tuples = FgaTuplesMethods(core)
+
+    @overload
+    def check(self, query: FgaCheckQuery, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaCheck]: ...
+
+    @overload
+    def check(self, query: FgaCheckQuery, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaCheck] | PendingApprovalResult[FgaCheck]: ...
+
+    def check(self, query: FgaCheckQuery, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaCheck] | PendingApprovalResult[FgaCheck]:
+        """Check whether a subject has a relation on a resource — directly, through computed relations, parents or nested groups. Optionally at least as fresh as a consistency_token.
+
+        Requires scope `fga:read`. Danger: read.
+
+        ``GET /fga/check`` · action ``fga.check``
+        Scope ``fga:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.check"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def check_batch(self, query: FgaCheckBatchQuery, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaCheckBatch]: ...
+
+    @overload
+    def check_batch(self, query: FgaCheckBatchQuery, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaCheckBatch] | PendingApprovalResult[FgaCheckBatch]: ...
+
+    def check_batch(self, query: FgaCheckBatchQuery, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[FgaCheckBatch] | PendingApprovalResult[FgaCheckBatch]:
+        """Run 1–100 checks in one round trip, each written resource#relation@subject (document:readme#viewer@user:alice), all at the same revision, answered in order.
+
+        Requires scope `fga:read`. Danger: read.
+
+        ``GET /fga/check/batch`` · action ``fga.check_batch``
+        Scope ``fga:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["fga.check_batch"], (), query, approval=approval, approval_id=approval_id, headers=headers)
 
 
 class FrontendKeysMethods:
@@ -5789,6 +7319,190 @@ class PermissionsMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["permissions.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class PipesConnectionsMethods:
+    """``pipes.connections.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def delete(self, id: str, connection_id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def delete(self, id: str, connection_id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def delete(self, id: str, connection_id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Disconnect a person's connected account: revoke it at the provider where supported, revoke its tokens here, and forget it.
+
+        Requires scope `pipes:write`. Danger: destructive.
+
+        ``DELETE /pipes/{id}/connections/{connection_id}`` · action ``pipes.connections.delete``
+        Scope ``pipes:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.connections.delete"], (id, connection_id), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, id: str, query: PipesConnectionsListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[PipesConnectionsListData]: ...
+
+    @overload
+    def list(self, id: str, query: PipesConnectionsListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[PipesConnectionsListData] | PendingApprovalResult[PipesConnectionsListData]: ...
+
+    def list(self, id: str, query: PipesConnectionsListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[PipesConnectionsListData] | PendingApprovalResult[PipesConnectionsListData]:
+        """List the accounts people connected through a pipe: who, which account, granted scopes, status (active / needs_reauth) and when the token expires. Never a token.
+
+        Requires scope `pipes:read`. Danger: read.
+
+        ``GET /pipes/{id}/connections`` · action ``pipes.connections.list``
+        Scope ``pipes:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.connections.list"], (id,), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, id: str, query: PipesConnectionsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[PipeConnection]:
+        """Every item of ``pipes.connections.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["pipes.connections.list"], (id,), query, headers=headers)
+
+
+class PipesGrantsMethods:
+    """``pipes.grants.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def create(self, id: str, body: PipesGrantsCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe]: ...
+
+    @overload
+    def create(self, id: str, body: PipesGrantsCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe] | PendingApprovalResult[Pipe]: ...
+
+    def create(self, id: str, body: PipesGrantsCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe] | PendingApprovalResult[Pipe]:
+        """Grant an app (by OAuth client id) the right to lease fresh access tokens for the accounts people connected through this pipe.
+
+        Requires scope `pipes:write`. Danger: critical.
+
+        ``POST /pipes/{id}/grants`` · action ``pipes.grants.create``
+        Scope ``pipes:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.grants.create"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def delete(self, id: str, client_id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def delete(self, id: str, client_id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def delete(self, id: str, client_id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Withdraw an app's right to lease the tokens people connected through this pipe.
+
+        Requires scope `pipes:write`. Danger: destructive.
+
+        ``DELETE /pipes/{id}/grants/{client_id}`` · action ``pipes.grants.delete``
+        Scope ``pipes:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.grants.delete"], (id, client_id), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class PipesMethods:
+    """``pipes.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.connections = PipesConnectionsMethods(core)
+        self.grants = PipesGrantsMethods(core)
+
+    @overload
+    def create(self, body: PipesCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe]: ...
+
+    @overload
+    def create(self, body: PipesCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe] | PendingApprovalResult[Pipe]: ...
+
+    def create(self, body: PipesCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe] | PendingApprovalResult[Pipe]:
+        """Configure a pipe: the environment's OAuth app at a third-party provider (GitHub, Google, Microsoft 365, Slack, Salesforce, HubSpot, Linear, Notion), so people can connect their accounts. The client secret is sealed and never returned.
+
+        Requires scope `pipes:write`. Danger: write.
+
+        ``POST /pipes`` · action ``pipes.create``
+        Scope ``pipes:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def delete(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def delete(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def delete(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Remove a pipe and every connection through it. Their tokens are revoked here, not at the provider — disconnect people first if that matters.
+
+        Requires scope `pipes:write`. Danger: destructive.
+
+        ``DELETE /pipes/{id}`` · action ``pipes.delete``
+        Scope ``pipes:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.delete"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def get(self, id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe]: ...
+
+    @overload
+    def get(self, id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe] | PendingApprovalResult[Pipe]: ...
+
+    def get(self, id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe] | PendingApprovalResult[Pipe]:
+        """Show one pipe: its provider, OAuth client id, scopes, the redirect URI to register at the provider, and the apps granted its tokens.
+
+        Requires scope `pipes:read`. Danger: read.
+
+        ``GET /pipes/{id}`` · action ``pipes.get``
+        Scope ``pipes:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, query: PipesListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[PipesListData]: ...
+
+    @overload
+    def list(self, query: PipesListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[PipesListData] | PendingApprovalResult[PipesListData]: ...
+
+    def list(self, query: PipesListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[PipesListData] | PendingApprovalResult[PipesListData]:
+        """List the pipes — the third-party providers people can connect their accounts to — with their scopes and the apps granted their tokens. Never a client secret.
+
+        Requires scope `pipes:read`. Danger: read.
+
+        ``GET /pipes`` · action ``pipes.list``
+        Scope ``pipes:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, query: PipesListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[Pipe]:
+        """Every item of ``pipes.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["pipes.list"], (), query, headers=headers)
+
+    @overload
+    def update(self, id: str, body: PipesUpdateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe]: ...
+
+    @overload
+    def update(self, id: str, body: PipesUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe] | PendingApprovalResult[Pipe]: ...
+
+    def update(self, id: str, body: PipesUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Pipe] | PendingApprovalResult[Pipe]:
+        """Change a pipe — client id, client secret (sealed), scopes, parameters, or whether it is enabled. Only what is sent changes.
+
+        Requires scope `pipes:write`. Danger: write.
+
+        ``PATCH /pipes/{id}`` · action ``pipes.update``
+        Scope ``pipes:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["pipes.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 class ProvisioningTargetsStatusMethods:
     """``provisioning.targets.status.*``"""
 
@@ -5899,6 +7613,303 @@ class ProvisioningMethods:
     def __init__(self, core: ManagementTransport) -> None:
         self._core = core
         self.targets = ProvisioningTargetsMethods(core)
+
+
+class RadarDecisionsMethods:
+    """``radar.decisions.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def get(self, id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarDecision]: ...
+
+    @overload
+    def get(self, id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarDecision] | PendingApprovalResult[RadarDecision]: ...
+
+    def get(self, id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarDecision] | PendingApprovalResult[RadarDecision]:
+        """Read one Radar decision: the verdict, whether it was enforced, the deciding rule, every rule that fired, the reasons, the risk score and the facts it was decided on.
+
+        Requires scope `radar:read`. Danger: read.
+
+        ``GET /radar/decisions/{id}`` · action ``radar.decisions.get``
+        Scope ``radar:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.decisions.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, query: RadarDecisionsListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarDecisionsListData]: ...
+
+    @overload
+    def list(self, query: RadarDecisionsListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarDecisionsListData] | PendingApprovalResult[RadarDecisionsListData]: ...
+
+    def list(self, query: RadarDecisionsListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarDecisionsListData] | PendingApprovalResult[RadarDecisionsListData]:
+        """List this environment's Radar decisions newest first — verdict, deciding rule, every rule that fired, reasons and facts — filtered by verdict, flow, rule, country, email, IP, device or time; pass `next_cursor` as `after` to page. Email and IP are matched by keyed pseudonym and never returned.
+
+        Requires scope `radar:read`. Danger: read.
+
+        ``GET /radar/decisions`` · action ``radar.decisions.list``
+        Scope ``radar:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.decisions.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, query: RadarDecisionsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[RadarDecision]:
+        """Every item of ``radar.decisions.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["radar.decisions.list"], (), query, headers=headers)
+
+
+class RadarListsMethods:
+    """``radar.lists.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def add(self, body: RadarListsAddBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarListEntry]: ...
+
+    @overload
+    def add(self, body: RadarListsAddBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarListEntry] | PendingApprovalResult[RadarListEntry]: ...
+
+    def add(self, body: RadarListsAddBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarListEntry] | PendingApprovalResult[RadarListEntry]:
+        """Add an entry to this environment's Radar allow or deny list: an IP or CIDR range, an email address, a mail domain (and its subdomains), or a device id from the decisions explorer. Deny blocks before every rule; allow skips every rule.
+
+        Requires scope `radar:write`. Danger: write.
+
+        ``POST /radar/lists`` · action ``radar.lists.add``
+        Scope ``radar:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.lists.add"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, query: RadarListsListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarListsListData]: ...
+
+    @overload
+    def list(self, query: RadarListsListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarListsListData] | PendingApprovalResult[RadarListsListData]: ...
+
+    def list(self, query: RadarListsListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarListsListData] | PendingApprovalResult[RadarListsListData]:
+        """List this environment's Radar allow and deny entries — IPs and CIDR ranges, addresses, mail domains, devices — optionally one list or one kind.
+
+        Requires scope `radar:read`. Danger: read.
+
+        ``GET /radar/lists`` · action ``radar.lists.list``
+        Scope ``radar:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.lists.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, query: RadarListsListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[RadarListEntry]:
+        """Every item of ``radar.lists.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["radar.lists.list"], (), query, headers=headers)
+
+    @overload
+    def remove(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def remove(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def remove(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Remove an entry from this environment's Radar allow or deny list.
+
+        Requires scope `radar:write`. Danger: destructive.
+
+        ``DELETE /radar/lists/{id}`` · action ``radar.lists.remove``
+        Scope ``radar:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.lists.remove"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class RadarModeMethods:
+    """``radar.mode.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def set(self, body: RadarModeSetBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings]: ...
+
+    @overload
+    def set(self, body: RadarModeSetBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings] | PendingApprovalResult[RadarSettings]: ...
+
+    def set(self, body: RadarModeSetBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings] | PendingApprovalResult[RadarSettings]:
+        """Switch this environment's Radar between `monitor` (verdicts recorded, never acted on) and `enforce` (blocks refuse sign-ins and sign-ups, challenges demand a second factor). Changes the environment's security posture.
+
+        Requires scope `radar:manage`. Danger: critical.
+
+        ``PUT /radar/mode`` · action ``radar.mode.set``
+        Scope ``radar:manage`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.mode.set"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class RadarRulesMethods:
+    """``radar.rules.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def create(self, body: RadarRulesCreateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule]: ...
+
+    @overload
+    def create(self, body: RadarRulesCreateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule] | PendingApprovalResult[RadarRule]: ...
+
+    def create(self, body: RadarRulesCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule] | PendingApprovalResult[RadarRule]:
+        """Add a Radar rule: when EVERY condition (field, operator, value) holds, allow, challenge or block. Rules run in order after the allow/deny lists and before the built-in rules; the first match decides. Example: country not_in [DK, SE] → challenge.
+
+        Requires scope `radar:write`. Danger: write.
+
+        ``POST /radar/rules`` · action ``radar.rules.create``
+        Scope ``radar:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.rules.create"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def delete(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def delete(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def delete(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Delete a Radar rule. Attempts it decided are decided by the next matching rule, or the built-in rules, from then on.
+
+        Requires scope `radar:write`. Danger: destructive.
+
+        ``DELETE /radar/rules/{id}`` · action ``radar.rules.delete``
+        Scope ``radar:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.rules.delete"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def get(self, id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule]: ...
+
+    @overload
+    def get(self, id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule] | PendingApprovalResult[RadarRule]: ...
+
+    def get(self, id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule] | PendingApprovalResult[RadarRule]:
+        """Read one Radar rule: its action, the flows it applies to, its position and its conditions.
+
+        Requires scope `radar:read`. Danger: read.
+
+        ``GET /radar/rules/{id}`` · action ``radar.rules.get``
+        Scope ``radar:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.rules.get"], (id,), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, query: RadarRulesListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRulesListData]: ...
+
+    @overload
+    def list(self, query: RadarRulesListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRulesListData] | PendingApprovalResult[RadarRulesListData]: ...
+
+    def list(self, query: RadarRulesListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRulesListData] | PendingApprovalResult[RadarRulesListData]:
+        """List this environment's own Radar rules in evaluation order (the first whose conditions all hold decides), with their conditions and a readable summary of each.
+
+        Requires scope `radar:read`. Danger: read.
+
+        ``GET /radar/rules`` · action ``radar.rules.list``
+        Scope ``radar:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.rules.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+    def list_all(self, query: RadarRulesListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[RadarRule]:
+        """Every item of ``radar.rules.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["radar.rules.list"], (), query, headers=headers)
+
+    @overload
+    def reorder(self, body: RadarRulesReorderBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def reorder(self, body: RadarRulesReorderBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def reorder(self, body: RadarRulesReorderBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Set the order Radar rules are evaluated in: `rule_ids` lists every rule of the environment exactly once, first evaluated first.
+
+        Requires scope `radar:write`. Danger: write.
+
+        ``PUT /radar/rules/order`` · action ``radar.rules.reorder``
+        Scope ``radar:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.rules.reorder"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def update(self, id: str, body: RadarRulesUpdateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule]: ...
+
+    @overload
+    def update(self, id: str, body: RadarRulesUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule] | PendingApprovalResult[RadarRule]: ...
+
+    def update(self, id: str, body: RadarRulesUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarRule] | PendingApprovalResult[RadarRule]:
+        """Change a Radar rule: its name, description, action, flows, enabled state, position, or (replaced whole) its conditions.
+
+        Requires scope `radar:write`. Danger: write.
+
+        ``PATCH /radar/rules/{id}`` · action ``radar.rules.update``
+        Scope ``radar:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.rules.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class RadarSettingsMethods:
+    """``radar.settings.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def get(self, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings]: ...
+
+    @overload
+    def get(self, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings] | PendingApprovalResult[RadarSettings]: ...
+
+    def get(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings] | PendingApprovalResult[RadarSettings]:
+        """Read this environment's Radar settings: the mode (monitor or enforce, and whether it is inherited from the deployment), the IP intelligence source, and every built-in rule with its action and threshold.
+
+        Requires scope `radar:read`. Danger: read.
+
+        ``GET /radar/settings`` · action ``radar.settings.get``
+        Scope ``radar:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.settings.get"], (), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def update(self, body: RadarSettingsUpdateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings]: ...
+
+    @overload
+    def update(self, body: RadarSettingsUpdateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings] | PendingApprovalResult[RadarSettings]: ...
+
+    def update(self, body: RadarSettingsUpdateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RadarSettings] | PendingApprovalResult[RadarSettings]:
+        """Tune this environment's built-in Radar rules: `builtin_rules` maps a rule key (credential_stuffing, bot_velocity, account_attack, impossible_travel, new_device, anonymous_network, hosting_network, disposable_email, risk_score_reject, risk_score_elevated) to any of enabled, action and threshold.
+
+        Requires scope `radar:write`. Danger: write.
+
+        ``PATCH /radar/settings`` · action ``radar.settings.update``
+        Scope ``radar:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["radar.settings.update"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class RadarMethods:
+    """``radar.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.decisions = RadarDecisionsMethods(core)
+        self.lists = RadarListsMethods(core)
+        self.mode = RadarModeMethods(core)
+        self.rules = RadarRulesMethods(core)
+        self.settings = RadarSettingsMethods(core)
 
 
 class RolesPermissionsMethods:
@@ -6215,6 +8226,47 @@ class SigninSelfServiceSignupMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["signin.self_service_signup.set"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class SigninSmsMethods:
+    """``signin.sms.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def get(self, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SmsFactorPolicy]: ...
+
+    @overload
+    def get(self, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SmsFactorPolicy] | PendingApprovalResult[SmsFactorPolicy]: ...
+
+    def get(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SmsFactorPolicy] | PendingApprovalResult[SmsFactorPolicy]:
+        """Read the SMS second-factor policy: whether text-message codes are accepted, for which countries, and the administrator rule.
+
+        Requires scope `signin:read`. Danger: read.
+
+        ``GET /sign-in/sms`` · action ``signin.sms.get``
+        Scope ``signin:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signin.sms.get"], (), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def update(self, body: SigninSmsUpdateBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SmsFactorPolicy]: ...
+
+    @overload
+    def update(self, body: SigninSmsUpdateBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SmsFactorPolicy] | PendingApprovalResult[SmsFactorPolicy]: ...
+
+    def update(self, body: SigninSmsUpdateBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[SmsFactorPolicy] | PendingApprovalResult[SmsFactorPolicy]:
+        """Change the SMS second-factor policy: accept text-message codes or not, the countries they may go to, and whether SMS may be an administrator's only factor.
+
+        Requires scope `signin:write`. Danger: critical.
+
+        ``PATCH /sign-in/sms`` · action ``signin.sms.update``
+        Scope ``signin:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signin.sms.update"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 class SigninSocialMethods:
     """``signin.social.*``"""
 
@@ -6284,6 +8336,7 @@ class SigninMethods:
         self._core = core
         self.policy = SigninPolicyMethods(core)
         self.self_service_signup = SigninSelfServiceSignupMethods(core)
+        self.sms = SigninSmsMethods(core)
         self.social = SigninSocialMethods(core)
 
 
@@ -7016,11 +9069,36 @@ class UsersEnvironmentRolesMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["users.environment_roles.revoke"], (id, role_id), query, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class UsersMfaSmsMethods:
+    """``users.mfa.sms.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def remove(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def remove(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def remove(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Remove a user's phone number for text-message sign-in codes. Their other factors and recovery codes stay.
+
+        Requires scope `users:write`. Danger: critical.
+
+        ``DELETE /users/{id}/mfa/sms`` · action ``users.mfa.sms.remove``
+        Scope ``users:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["users.mfa.sms.remove"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 class UsersMfaMethods:
     """``users.mfa.*``"""
 
     def __init__(self, core: ManagementTransport) -> None:
         self._core = core
+        self.sms = UsersMfaSmsMethods(core)
 
     @overload
     def reset(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
@@ -7542,6 +9620,8 @@ class EnvironmentClient(ManagementClient):
         self.directories = DirectoriesMethods(core)
         self.domains = DomainsMethods(core)
         self.events = EventsMethods(core)
+        self.feature_flags = FeatureFlagsMethods(core)
+        self.fga = FgaMethods(core)
         self.frontend_keys = FrontendKeysMethods(core)
         self.hooks = HooksMethods(core)
         self.invitations = InvitationsMethods(core)
@@ -7551,7 +9631,9 @@ class EnvironmentClient(ManagementClient):
         self.members = MembersMethods(core)
         self.organizations = OrganizationsMethods(core)
         self.permissions = PermissionsMethods(core)
+        self.pipes = PipesMethods(core)
         self.provisioning = ProvisioningMethods(core)
+        self.radar = RadarMethods(core)
         self.roles = RolesMethods(core)
         self.saml_apps = SamlAppsMethods(core)
         self.signin = SigninMethods(core)

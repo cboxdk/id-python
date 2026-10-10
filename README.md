@@ -251,6 +251,30 @@ if org and org.role is OrganizationRole.OWNER:
 Matching is exact — `invoices:*` does not grant `invoices:delete`. An `org_role` this SDK
 version does not recognise reads as `None`, never as a tier it would have to guess.
 
+### Feature flags
+
+Request the `feature_flags` scope (and give the app that scope on its Scopes tab) and the
+tokens and UserInfo carry the keys of every flag that is on for the person, in the
+organization they signed in to:
+
+```python
+from cbox_id import FEATURE_FLAGS_SCOPE, CboxIdConfig, has_feature
+
+config = CboxIdConfig(..., scopes=["openid", "profile", "email", FEATURE_FLAGS_SCOPE])
+
+user.feature_flags  # ["acme-beta", "new-dashboard"], or None
+if user.has_feature("new-dashboard"):
+    show_new_dashboard()
+has_feature(access_token_payload, "billing.v2")  # on a verified claim set too
+```
+
+`None` means the claim is absent — the scope was not requested — and `[]` means nothing is
+on. Either way `has_feature()` is `False`: a missing scope turns every feature off, never
+on. A token carries the flags as they were when it was issued; the next refresh picks up a
+change. To ask without a token in hand (a job, a webhook handler), use
+`env.feature_flags.evaluate({"user_id": ..., "organization_id": ...})` from the
+[Management API](#management-api).
+
 ### Support sessions
 
 A staff member can act as one of your users for a limited time (at most an hour, no refresh
@@ -285,6 +309,37 @@ Revoking a refresh token drops the whole token family — that's what "sign out
 everywhere" needs. Machine tokens and introspection are confidential-client calls and
 require a `client_secret`; revocation also works for a public (PKCE) client, which names
 itself in the request body instead.
+
+## Pipes: a person's own GitHub, Google, Slack… token
+
+When a person has connected their account at a provider, lease a fresh access token for it.
+`client.pipes` gets its own client-credentials token with the `vault.lease` scope (and
+reuses it until it nearly expires); Cbox ID refreshes the provider token first when it is
+about to expire:
+
+```python
+from cbox_id import (
+    PipeNotConnectedError,
+    PipeReauthorizationRequiredError,
+    PipeTemporarilyUnavailableError,
+)
+
+try:
+    token = client.pipes.lease_token("github", user_id=user_id, purpose="list-repos")
+    # call https://api.github.com/user/repos with token.access_token, then drop it
+except (PipeNotConnectedError, PipeReauthorizationRequiredError) as e:
+    return redirect(e.connect_url_with(client_id=CLIENT_ID, return_to=request.url))
+except PipeTemporarilyUnavailableError as e:
+    retry_later(e.retry_after)
+# PipeLeaseDeniedError: the app is not granted this pipe — a configuration problem.
+```
+
+With a token issued for the person (they signed in to your app), use
+`PipesClient(issuer, user.access_token).lease_token("github", purpose=...)` and leave
+`user_id` out. To send somebody to connect before any lease,
+`client.pipe_connect_url("github", return_to)` is the hosted connect page, preselected to
+your app; they come back with `?provider=github&status=connected` (or `cancelled`,
+`failed`).
 
 ## Declare roles & permissions
 
@@ -504,6 +559,50 @@ workspace plane:
 for org in env.organizations.list_all({"limit": 100}):
     print(org["id"], org["name"])
 ```
+
+### Fine-grained authorization
+
+`env.fga` writes relationship tuples and asks checks. Every write answers with a
+`consistency_token`; pass it to a check that must see the write:
+
+```python
+from cbox_id.management import fga_tuple
+
+written = env.fga.tuples.write(
+    {
+        "tuples": [
+            {
+                "resource_type": "document",
+                "resource_id": "leave",
+                "relation": "viewer",
+                "subject": {"type": "user", "id": "alice"},
+            }
+        ]
+    }
+)
+
+answer = env.fga.check(
+    {
+        "resource_type": "document",
+        "resource_id": "leave",
+        "relation": "viewer",
+        "subject_type": "user",
+        "subject_id": "alice",
+        "consistency_token": written.data["consistency_token"],
+    }
+)
+answer.data["allowed"]
+
+# Up to 100 at once, in the tuple notation, answered in order:
+env.fga.check_batch(
+    {"checks": ["document:leave#viewer@user:alice", "document:readme#editor@user:alice"]}
+)
+```
+
+`env.fga.tuples.delete()`, `env.fga.resources.list()` (which documents can alice view),
+`env.fga.subjects.list()` (who can view this one), and `env.fga.schema.get()` /
+`.update()` / `.validate()` complete it. `fga_tuple()` writes the notation from the same
+mapping `tuples.write` takes.
 
 ### Audit Logs
 

@@ -96,6 +96,34 @@ def has_permission(source: ClaimSource, permission: str) -> bool:
     return permission in permissions(source)
 
 
+#: The scope that puts the ``feature_flags`` claim on the ID token, the access token and
+#: UserInfo. Request it at sign-in and give the app the scope on its Scopes tab.
+FEATURE_FLAGS_SCOPE = "feature_flags"
+
+
+def feature_flags(source: ClaimSource) -> list[str] | None:
+    """The keys of the feature flags on for this person — the ``feature_flags`` claim.
+
+    In the organization the session is bound to, sorted as the server sent them.
+
+    ``None`` IS NOT EMPTY. ``None`` means the claim is absent: the ``feature_flags`` scope
+    was not requested, or the instance predates it. ``[]`` means it was asked and nothing
+    is on. A token carries the flags as they were when it was issued; the next refresh, or
+    UserInfo, picks up a change.
+    """
+    claim = _claims_of(source).get("feature_flags")
+    return _string_list(claim) if isinstance(claim, list) else None
+
+
+def has_feature(source: ClaimSource, key: str) -> bool:
+    """Whether the feature flag ``key`` is on for this session. Exact match on the key.
+
+    ``False`` when the claim is absent — an app that forgot to request the scope sees every
+    feature off, never every feature on. Use :func:`feature_flags` to tell the two apart.
+    """
+    return key in (feature_flags(source) or [])
+
+
 def _parse_actor(claim: object, depth: int) -> Actor | None:
     # Only an absent or null claim means "nobody else". `False`, `""`, `[]` and `{}` are
     # all present, and all mean an issuer tried to say something about an actor.
