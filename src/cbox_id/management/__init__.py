@@ -40,6 +40,7 @@ from .errors import (
     CboxIdApiError,
     ManagementNetworkError,
 )
+from .fga import fga_tuple
 from .generated import account as account_api
 from .generated import environment as environment_api
 from .generated import platform as platform_api
@@ -106,6 +107,7 @@ __all__ = [
     "canonical_json",
     "environment_api",
     "export_audit_logs",
+    "fga_tuple",
     "generate_dpop_key",
     "platform_api",
     "retry_after_seconds",

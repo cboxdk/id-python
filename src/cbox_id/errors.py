@@ -111,3 +111,78 @@ class FrontendApiError(CboxIdError):
         super().__init__(message)
         self.code = code
         self.status = status
+
+
+class PipeLeaseError(CboxIdError):
+    """A Pipes token lease was refused.
+
+    Catch the subclasses for the cases you can act on:
+
+    - :class:`PipeNotConnectedError` (404) and :class:`PipeReauthorizationRequiredError`
+      (409) — send the person to :attr:`connect_url`.
+    - :class:`PipeTemporarilyUnavailableError` (503) — retry after :attr:`retry_after`.
+    - :class:`PipeLeaseDeniedError` (403) — a configuration problem: the app is not granted
+      the pipe, the pipe is disabled, or the person is outside the app's organization.
+
+    Anything else (401, 422, 429) is raised as this base class with ``status`` and ``error``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error: str | None,
+        status: int,
+        connect_url: str | None = None,
+        retry_after: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        #: The server's error code, e.g. ``not_connected``.
+        self.error = error
+        self.status = status
+        #: Where to send the person to (re)connect — set on 404 and 409.
+        self.connect_url = connect_url
+        #: Seconds to wait, off ``Retry-After``, when the server sent one.
+        self.retry_after = retry_after
+
+    def connect_url_with(
+        self, *, client_id: str | None = None, return_to: str | None = None
+    ) -> str | None:
+        """:attr:`connect_url` with your ``client_id`` and ``return_to`` on it, or ``None``."""
+        from .pipes import with_connect_return
+
+        if self.connect_url is None:
+            return None
+        return with_connect_return(self.connect_url, client_id=client_id, return_to=return_to)
+
+
+class PipeNotConnectedError(PipeLeaseError):
+    """The person has not connected this provider (404 ``not_connected``).
+
+    Send them to :attr:`connect_url`.
+    """
+
+    connect_url: str
+
+
+class PipeReauthorizationRequiredError(PipeLeaseError):
+    """The provider stopped accepting the connection (409 ``reauthorization_required``).
+
+    Revoked at the provider, or the refresh token expired. Send the person to
+    :attr:`connect_url` to connect again.
+    """
+
+    connect_url: str
+
+
+class PipeTemporarilyUnavailableError(PipeLeaseError):
+    """The provider could not refresh the token just now (503). Retry after ``retry_after``."""
+
+
+class PipeLeaseDeniedError(PipeLeaseError):
+    """The lease was denied (403 ``lease_denied``).
+
+    The app is not granted the pipe, the pipe is disabled or missing, the person is not in
+    the app's organization, or ``user_id`` names someone other than the token's person. One
+    answer for every reason, by design.
+    """

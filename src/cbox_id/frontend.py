@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -33,8 +34,14 @@ class FrontendConfig:
     mode: str | None
     issuer: str
     endpoints: dict[str, str]
+    #: The social buttons to draw, exactly as the hosted sign-in page would: the
+    #: environment's own providers, or — with ``config(organization=…)`` — that
+    #: organization's.
     social: list[dict[str, str]] = field(default_factory=list)
     appearance: dict[str, Any] | None = None
+    #: Which other sign-in methods are switched on (``passkeys``, ``magic_link``), so a box
+    #: does not draw a button whose endpoint answers 403. ``None`` from older instances.
+    methods: dict[str, bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,32 +86,46 @@ class FrontendClient:
         # request sets up and tears down a connection pool for every call, and left a
         # caller with a configured client — proxy, retries, custom TLS — no way to pass it.
         self._http_client = http_client
-        self._config: FrontendConfig | None = None
+        self._configs: dict[str, FrontendConfig] = {}
 
     @property
     def is_live(self) -> bool:
         """Whether this key drives real sign-ins — handy for a "test mode" badge."""
         return self._key.startswith("pk_live_")
 
-    def config(self) -> FrontendConfig:
+    def config(self, organization: str | None = None) -> FrontendConfig:
         """The public sign-in configuration.
 
         Cached on the instance. The document is small and changes when somebody edits it in
         the console, so a long-lived process picks changes up when it next builds a client
         rather than mid-request — the right trade for something that decides layout.
-        """
-        if self._config is None:
-            body = self._get("/frontend/v1/config")
 
-            self._config = FrontendConfig(
+        ``organization`` (an id or slug, the way a hosted page is addressed) asks for that
+        organization's sign-in box: ``social`` is then exactly what its hosted page offers.
+        Each organization is cached on its own; one the environment does not have is
+        answered as no hint at all.
+        """
+        key = organization or ""
+
+        if key not in self._configs:
+            path = "/frontend/v1/config"
+            if key:
+                path += f"?{urlencode({'organization': key})}"
+            body = self._get(path)
+            methods = body.get("methods")
+
+            self._configs[key] = FrontendConfig(
                 mode=body.get("mode"),
                 issuer=body.get("issuer", self._issuer),
                 endpoints=body.get("endpoints", {}),
                 social=body.get("social", []),
                 appearance=body.get("appearance"),
+                methods={k: v for k, v in methods.items() if isinstance(v, bool)}
+                if isinstance(methods, dict)
+                else None,
             )
 
-        return self._config
+        return self._configs[key]
 
     def session(self, access_token: str | None = None) -> FrontendSession:
         """Who is signed in, given a token you already hold.

@@ -68,6 +68,25 @@ def test_fetches_the_document_once_per_client() -> None:
     assert len(seen) == 1
 
 
+def test_asks_for_one_organizations_buttons_and_caches_each_on_its_own() -> None:
+    seen: list[httpx.Request] = []
+    body = {**CONFIG, "methods": {"passkeys": True, "magic_link": False}}
+    client = FrontendClient(
+        "https://id.acme.test", "pk_live_abc", transport=transport_for(body=body, seen=seen)
+    )
+
+    plain = client.config()
+    client.config(organization="acme corp")
+    client.config(organization="acme corp")
+    client.config()
+
+    assert [str(r.url) for r in seen] == [
+        "https://id.acme.test/frontend/v1/config",
+        "https://id.acme.test/frontend/v1/config?organization=acme+corp",
+    ]
+    assert plain.methods == {"passkeys": True, "magic_link": False}
+
+
 def test_signed_out_is_a_state_not_an_error() -> None:
     """Code that renders an avatar everywhere should not treat a rejection as a state."""
     seen: list[httpx.Request] = []
