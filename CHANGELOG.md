@@ -3,7 +3,7 @@
 All notable changes to `cbox-id-client` are recorded here. Earlier releases are described
 by their tags and commit history.
 
-## [0.12.0] — prepared candidate, not published
+## [0.12.0] - 2026-11-07
 
 ### Upgrade
 
