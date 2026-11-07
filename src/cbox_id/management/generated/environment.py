@@ -16,6 +16,23 @@ from ..transport import ManagementTransport
 # ── Schemas (components.schemas) ──────────────────────────────────────────────────────────────────
 
 
+class OrganizationServiceGrant(TypedDict):
+    id: str
+    organization_id: str
+    service: str
+    consumer_client_id: str
+    audience: str
+    scopes: list[str]
+    revoked_at: str | None
+
+
+class UserPropertySnapshot(TypedDict):
+    user_id: str
+    namespace: str
+    data: dict[str, Any]
+    version: int
+
+
 class ManagementKeyRequireApprovalOption1(TypedDict):
     min_danger: NotRequired[Literal["read", "write", "destructive", "critical"] | None]
     actions: NotRequired[list[str]]
@@ -132,11 +149,13 @@ class Approval(TypedDict):
     organization_id: NotRequired[str | None]
     requested_at: NotRequired[str | None]
     expires_at: NotRequired[str | None]
+    status: NotRequired[Literal["pending", "approved", "denied", "expired", "reported"]]
+    purpose: NotRequired[str]
 
 
 class ApprovalDecision(TypedDict):
     id: str
-    status: Literal["approved", "denied"]
+    status: Literal["approved", "denied", "reported"]
 
 
 class VaultSecret(TypedDict):
@@ -208,6 +227,10 @@ class Invitation(TypedDict):
 
     #: Ids of the access roles granted when the invitation is accepted.
     roles: list[str]
+
+    #: The subject that accepted this invitation. Null for pending or historical invitations without a receipt.
+    accepted_by: NotRequired[str | None]
+    accepted_at: NotRequired[str | None]
     status: Literal["pending", "accepted", "revoked"]
 
     #: The app it came from.
@@ -217,6 +240,14 @@ class Invitation(TypedDict):
     return_to: NotRequired[str | None]
     invited_at: NotRequired[str | None]
     expires_at: NotRequired[str | None]
+
+
+class RolePendingDefinition(TypedDict):
+    """A published change waiting for an environment administrator to explicitly activate this version."""
+
+    version: str
+    permissions: list[str]
+    tenant_assignable: bool
 
 
 class Role(TypedDict):
@@ -237,6 +268,15 @@ class Role(TypedDict):
     #: it, nor can an invitation carry it. This API can — see the role endpoints.
     tenant_assignable: bool
     permissions: list[str]
+
+    #: The activated app definition. Publishing a new manifest does not change existing holders' permissions.
+    active_definition_version: NotRequired[str | None]
+
+    #: A published change waiting for an environment administrator to explicitly activate this version.
+    pending_definition: NotRequired[RolePendingDefinition | None]
+
+
+RoleAssignments: TypeAlias = 'list[RoleAssignment]'
 
 
 class RoleAssignment(TypedDict):
@@ -1848,6 +1888,52 @@ class ApisUpdateBody(TypedDict):
     scopes: NotRequired[list[ApiScope]]
 
 
+class AppCatalogDeleteBody(TypedDict):
+    version: int
+
+
+class AppCatalogListDataItem(TypedDict):
+    key: str
+    name: str
+    description: str | None
+    launch_url: str
+    icon_url: str | None
+    position: int
+    version: int
+
+
+AppCatalogListData: TypeAlias = 'list[AppCatalogListDataItem]'
+
+
+class AppCatalogSaveBody(TypedDict):
+    version: int
+    name: str
+    description: NotRequired[str | None]
+
+    #: Explicit HTTPS entry point. Never inferred from OAuth redirects.
+    launch_url: str
+    enabled: bool
+    position: int
+    audience: Literal["everyone", "organizations", "users"]
+    organization_ids: NotRequired[list[str]]
+    user_ids: NotRequired[list[str]]
+
+    #: Environment-wide OAuth client ids associated with this app. Does not grant access.
+    client_ids: NotRequired[list[str]]
+
+    #: Optional feature-flag key. Hidden when off for this person and organization.
+    required_feature: NotRequired[str | None]
+
+    #: PNG, JPEG or WebP data URI, up to 128 KiB and 512 pixels. Omit to retain; null clears. SVG and remote URLs are refused.
+    icon: NotRequired[str | None]
+
+
+AppCatalogSaveData: TypeAlias = dict[str, Any]
+
+
+AppCatalogShowData: TypeAlias = dict[str, Any]
+
+
 class ApprovalsListQuery(TypedDict):
     #: Items per page, 1–100. Default 50.
     limit: NotRequired[int]
@@ -1930,6 +2016,10 @@ class AppsSettingsBackchannelLogoutBody(TypedDict):
 
     #: Every logout token carries `sid`. Default false.
     session_required: NotRequired[bool]
+
+
+class AppsSettingsClientCredentialsBody(TypedDict):
+    enabled: bool
 
 
 class AppsSettingsTokenExchangeBody(TypedDict):
@@ -2145,6 +2235,11 @@ class AuditLogsVerifyQuery(TypedDict):
 
     #: Verify at most this many events. Default 10,000.
     limit: NotRequired[int]
+
+
+class AuthenticatorMeListData(TypedDict):
+    subject: str
+    label: str
 
 
 class BrandingAppearanceGetQuery(TypedDict):
@@ -3090,6 +3185,14 @@ class MembersAddBody(TypedDict):
     client_id: NotRequired[str | None]
 
 
+class MembersAppsRolesReplaceBody(TypedDict):
+    #: SHA-256 of the JSON array of current role ids for this app, sorted lexicographically. Read member roles first.
+    version: str
+
+    #: Manifest keys to assign. An empty list removes manual access to this app.
+    roles: list[str]
+
+
 class MembersListQuery(TypedDict):
     limit: NotRequired[int]
 
@@ -3178,7 +3281,7 @@ class OrganizationsPortalLinksCreateBody(TypedDict):
     email: NotRequired[str | None]
 
     #: The language of that mail. Left out, the environment's default language.
-    locale: NotRequired[Literal["en", "da", "de", "sv", "nb", "fr"] | None]
+    locale: NotRequired[Literal["en", "da", "de", "sv", "nb", "fr", "fi", "es", "it", "nl", "pt", "pl", "ro", "cs", "hu", "el", "bg", "hr", "sk", "tr", "uk"] | None]
 
 
 OrganizationsPortalLinksListData: TypeAlias = 'list[PortalLinkRecord]'
@@ -3538,6 +3641,10 @@ class RolesCreateBody(TypedDict):
     permissions: NotRequired[list[str]]
 
 
+class RolesDefinitionActivateBody(TypedDict):
+    version: str
+
+
 class RolesGetQuery(TypedDict):
     #: The app whose manifest `key` `id` is.
     client_id: NotRequired[str]
@@ -3633,6 +3740,45 @@ class SamlAppsUpdateBody(TypedDict):
 
     #: The organization that owns the application: only its active members are signed in to it, and the assertion names it. Null makes it environment-wide — every person in the environment may sign in to it.
     organization_id: NotRequired[str | None]
+
+
+class SignalsSourceErasuresListQuery(TypedDict):
+    after: NotRequired[str]
+    limit: NotRequired[int]
+
+
+SignalsSourceErasuresListItem: TypeAlias = dict[str, Any]
+
+
+SignalsSourceErasuresListData: TypeAlias = list[dict[str, Any]]
+
+
+class SignalsSourceListQuery(TypedDict):
+    after: NotRequired[str]
+    limit: NotRequired[int]
+
+
+class SignalsSourceListDataItemPosition(TypedDict):
+    source_id: str
+    partition: Literal["0"]
+    generation: str
+    sequence: str
+
+
+class SignalsSourceListDataItem(TypedDict):
+    contract_version: Literal["2.0.0"]
+    id: str
+    producer_environment: str
+    organization_id: str | None
+    position: SignalsSourceListDataItemPosition
+    kind: Literal["event", "relation"]
+    name: NotRequired[Literal["identity.authentication", "identity.session", "identity.token", "identity.account", "identity.activity"]]
+    occurred_at: str
+    recorded_at: str
+    data: NotRequired[dict[str, Any]]
+
+
+SignalsSourceListData: TypeAlias = 'list[SignalsSourceListDataItem]'
 
 
 class SigninPolicyGetQuery(TypedDict):
@@ -4154,6 +4300,23 @@ class TokenVaultSecretsRotateBody(TypedDict):
     secret: str
 
 
+class UserPropertyNamespacesConfigureBody(TypedDict):
+    #: OAuth client ids allowed to read. Omit or use an empty list to revoke all access.
+    readers: NotRequired[list[str]]
+
+    #: Reader client ids also allowed to write.
+    writers: NotRequired[list[str]]
+
+    #: Map webhook endpoint ids to reader client ids. Omit to remove all webhook grants.
+    webhooks: NotRequired[dict[str, Any]]
+
+
+UserPropertyNamespacesConfigureData: TypeAlias = dict[str, Any]
+
+
+UserPropertyNamespacesShowData: TypeAlias = dict[str, Any]
+
+
 class UsersCreateBody(TypedDict):
     email: str
     name: NotRequired[str | None]
@@ -4233,7 +4396,7 @@ class WebhooksCreateBody(TypedDict):
     url: str
 
     #: The events it receives.
-    event_types: list[Literal["user.created", "user.updated", "user.deactivated", "user.login", "user.reactivated", "identity.linked", "user.erased", "organization.created", "organization.suspended", "organization.reactivated", "organization.updated", "organization.deleted", "membership.created", "membership.updated", "membership.deleted", "invitation.created", "invitation.accepted", "invitation.revoked", "role.assigned", "role.unassigned", "role.assigned_everywhere", "role.unassigned_everywhere", "api_key.created", "api_key.revoked", "support_session.started", "directory.user.provisioned", "directory.user.deprovisioned", "directory.user.deactivated", "directory.group.membership_changed", "domain.added", "domain.removed", "domain.verified", "connection.activated", "connection.certificate_expiring", "entitlement.set", "entitlement.updated", "entitlement.revoked", "vault.grant.created", "vault.grant.revoked", "vault.secret.revoked", "pipe.connection.connected", "pipe.connection.needs_reauth", "pipe.connection.disconnected", "governance.access.revoked", "feature_flag.created", "feature_flag.updated", "feature_flag.deleted"]]
+    event_types: list[Literal["user.created", "user.updated", "user.preferences.updated", "user.metadata.updated", "user.deactivated", "user.login", "user.reactivated", "identity.linked", "user.erased", "organization.created", "organization.suspended", "organization.reactivated", "organization.updated", "organization.deleted", "membership.created", "membership.updated", "membership.deleted", "invitation.created", "invitation.accepted", "invitation.revoked", "role.assigned", "role.unassigned", "role.assigned_everywhere", "role.unassigned_everywhere", "api_key.created", "api_key.revoked", "support_session.started", "directory.user.provisioned", "directory.user.deprovisioned", "directory.user.deactivated", "directory.group.membership_changed", "domain.added", "domain.removed", "domain.verified", "connection.activated", "connection.certificate_expiring", "entitlement.set", "entitlement.updated", "entitlement.revoked", "vault.grant.created", "vault.grant.revoked", "vault.secret.revoked", "pipe.connection.connected", "pipe.connection.needs_reauth", "pipe.connection.disconnected", "governance.access.revoked", "feature_flag.created", "feature_flag.updated", "feature_flag.deleted"]]
 
     #: How deliveries are signed: `cbox` (X-Cbox-Signature, the default) or `standard_webhooks` (webhook-id / webhook-timestamp / webhook-signature, verifiable with any Standard Webhooks library; the secret is a `whsec_` secret).
     signature_scheme: NotRequired[Literal["cbox", "standard_webhooks"]]
@@ -4290,6 +4453,10 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "apis.scopes.define": OperationSpec(action="apis.scopes.define", operation_id="apis_scopes_define", method="PUT", path="/apis/{id}/scopes/{key}", path_params=("id", "key"), scope="apis:write", danger="write", approval=True, body=True, pagination=None),
     "apis.scopes.remove": OperationSpec(action="apis.scopes.remove", operation_id="apis_scopes_remove", method="DELETE", path="/apis/{id}/scopes/{key}", path_params=("id", "key"), scope="apis:write", danger="destructive", approval=True, body=False, pagination=None),
     "apis.update": OperationSpec(action="apis.update", operation_id=None, method="PATCH", path="/apis/{id}", path_params=("id",), scope="apis:write", danger="write", approval=True, body=True, pagination=None),
+    "app_catalog.delete": OperationSpec(action="app_catalog.delete", operation_id="app_catalog_delete", method="DELETE", path="/app-catalog/{key}", path_params=("key",), scope="app_catalog:write", danger="destructive", approval=True, body=True, pagination=None),
+    "app_catalog.list": OperationSpec(action="app_catalog.list", operation_id="app_catalog_list", method="GET", path="/app-catalog", path_params=(), scope="app_catalog:read", danger="read", approval=True, body=False, pagination=None),
+    "app_catalog.save": OperationSpec(action="app_catalog.save", operation_id="app_catalog_save", method="PUT", path="/app-catalog/{key}", path_params=("key",), scope="app_catalog:write", danger="write", approval=True, body=True, pagination=None),
+    "app_catalog.show": OperationSpec(action="app_catalog.show", operation_id="app_catalog_show", method="GET", path="/app-catalog/{key}", path_params=("key",), scope="app_catalog:read", danger="read", approval=True, body=False, pagination=None),
     "approvals.deny": OperationSpec(action="approvals.deny", operation_id="approvals_deny", method="POST", path="/agent-requests/{request_id}/deny", path_params=("request_id",), scope="approvals:write", danger="destructive", approval=True, body=False, pagination=None),
     "approvals.list": OperationSpec(action="approvals.list", operation_id="approvals_list", method="GET", path="/agent-requests", path_params=(), scope="approvals:read", danger="read", approval=True, body=False, pagination="cursor"),
     "apps.blueprint": OperationSpec(action="apps.blueprint", operation_id="apps_blueprint", method="GET", path="/apps/{id}/blueprint", path_params=("id",), scope="apps:read", danger="read", approval=True, body=False, pagination=None),
@@ -4306,6 +4473,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "apps.secrets.rotate": OperationSpec(action="apps.secrets.rotate", operation_id="apps_secrets_rotate", method="POST", path="/apps/{id}/secrets", path_params=("id",), scope="apps:write", danger="critical", approval=True, body=True, pagination=None),
     "apps.settings.api_key_prefix": OperationSpec(action="apps.settings.api_key_prefix", operation_id="apps_settings_api_key_prefix", method="PUT", path="/apps/{id}/settings/api-key-prefix", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
     "apps.settings.backchannel_logout": OperationSpec(action="apps.settings.backchannel_logout", operation_id="apps_settings_backchannel_logout", method="PUT", path="/apps/{id}/settings/backchannel-logout", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
+    "apps.settings.client_credentials": OperationSpec(action="apps.settings.client_credentials", operation_id="apps_settings_client_credentials", method="PUT", path="/apps/{id}/settings/client-credentials", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
     "apps.settings.token_exchange": OperationSpec(action="apps.settings.token_exchange", operation_id="apps_settings_token_exchange", method="PUT", path="/apps/{id}/settings/token-exchange", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
     "apps.settings.token_lifetime": OperationSpec(action="apps.settings.token_lifetime", operation_id="apps_settings_token_lifetime", method="PUT", path="/apps/{id}/settings/token-lifetime", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
     "apps.update": OperationSpec(action="apps.update", operation_id="apps_update", method="PATCH", path="/apps/{id}", path_params=("id",), scope="apps:write", danger="write", approval=True, body=True, pagination=None),
@@ -4322,6 +4490,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "audit_logs.settings.get": OperationSpec(action="audit_logs.settings.get", operation_id="audit_logs_settings_get", method="GET", path="/audit-logs/settings", path_params=(), scope="audit_logs:read", danger="read", approval=True, body=False, pagination=None),
     "audit_logs.settings.update": OperationSpec(action="audit_logs.settings.update", operation_id="audit_logs_settings_update", method="PATCH", path="/audit-logs/settings", path_params=(), scope="audit_logs:manage", danger="destructive", approval=True, body=True, pagination=None),
     "audit_logs.verify": OperationSpec(action="audit_logs.verify", operation_id="audit_logs_verify", method="GET", path="/audit-logs/verify", path_params=(), scope="audit_logs:read", danger="read", approval=True, body=False, pagination=None),
+    "authenticator.me.list": OperationSpec(action=None, operation_id="authenticatorIdentity", method="GET", path="/authenticator/me", path_params=(), scope=None, danger=None, approval=False, body=False, pagination=None),
     "branding.appearance.get": OperationSpec(action="branding.appearance.get", operation_id="branding_appearance_get", method="GET", path="/branding/appearance", path_params=(), scope="branding:read", danger="read", approval=True, body=False, pagination=None),
     "branding.appearance.set": OperationSpec(action="branding.appearance.set", operation_id="branding_appearance_set", method="PUT", path="/branding/appearance", path_params=(), scope="branding:write", danger="write", approval=True, body=True, pagination=None),
     "branding.whitelabel.get": OperationSpec(action="branding.whitelabel.get", operation_id="branding_whitelabel_get", method="GET", path="/branding/whitelabel", path_params=(), scope="branding:read", danger="read", approval=True, body=False, pagination=None),
@@ -4370,6 +4539,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "hooks.get": OperationSpec(action="hooks.get", operation_id="hooks_get", method="GET", path="/hooks/{id}", path_params=("id",), scope="hooks:read", danger="read", approval=True, body=False, pagination=None),
     "hooks.list": OperationSpec(action="hooks.list", operation_id="hooks_list", method="GET", path="/hooks", path_params=(), scope="hooks:read", danger="read", approval=True, body=False, pagination="cursor"),
     "hooks.update": OperationSpec(action="hooks.update", operation_id="hooks_update", method="PATCH", path="/hooks/{id}", path_params=("id",), scope="hooks:write", danger="critical", approval=True, body=True, pagination=None),
+    "invitations.get": OperationSpec(action="invitations.get", operation_id="invitations_get", method="GET", path="/organizations/{organization_id}/invitations/{invitation_id}", path_params=("organization_id", "invitation_id"), scope="invitations:read", danger="read", approval=True, body=False, pagination=None),
     "invitations.list": OperationSpec(action="invitations.list", operation_id="invitations_list", method="GET", path="/organizations/{organization_id}/invitations", path_params=("organization_id",), scope="invitations:read", danger="read", approval=True, body=False, pagination="cursor"),
     "invitations.resend": OperationSpec(action="invitations.resend", operation_id="invitations_resend", method="POST", path="/organizations/{organization_id}/invitations/{invitation_id}/resend", path_params=("organization_id", "invitation_id"), scope="invitations:write", danger="write", approval=True, body=False, pagination=None),
     "invitations.revoke": OperationSpec(action="invitations.revoke", operation_id="invitations_revoke", method="DELETE", path="/organizations/{organization_id}/invitations/{invitation_id}", path_params=("organization_id", "invitation_id"), scope="invitations:write", danger="destructive", approval=True, body=False, pagination=None),
@@ -4389,6 +4559,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "log_streams.test": OperationSpec(action="log_streams.test", operation_id="log_streams_test", method="POST", path="/log-streams/{id}/test", path_params=("id",), scope="log_streams:write", danger="write", approval=True, body=False, pagination=None),
     "log_streams.update": OperationSpec(action="log_streams.update", operation_id="log_streams_update", method="PATCH", path="/log-streams/{id}", path_params=("id",), scope="log_streams:write", danger="critical", approval=True, body=True, pagination=None),
     "members.add": OperationSpec(action="members.add", operation_id="members_add", method="POST", path="/organizations/{organization_id}/members", path_params=("organization_id",), scope="members:write", danger="write", approval=True, body=True, pagination=None),
+    "members.apps.roles.replace": OperationSpec(action="members.apps.roles.replace", operation_id="members_apps_roles_replace", method="PUT", path="/organizations/{organization_id}/members/{user_id}/apps/{client_id}/roles", path_params=("organization_id", "user_id", "client_id"), scope="roles:write", danger="write", approval=True, body=True, pagination=None),
     "members.list": OperationSpec(action="members.list", operation_id="members_list", method="GET", path="/organizations/{organization_id}/members", path_params=("organization_id",), scope="members:read", danger="read", approval=True, body=False, pagination="cursor"),
     "members.remove": OperationSpec(action="members.remove", operation_id="members_remove", method="DELETE", path="/organizations/{organization_id}/members/{user_id}", path_params=("organization_id", "user_id"), scope="members:write", danger="destructive", approval=True, body=False, pagination=None),
     "members.roles.grant": OperationSpec(action="members.roles.grant", operation_id="members_roles_grant", method="PUT", path="/organizations/{organization_id}/members/{user_id}/roles/{role_id}", path_params=("organization_id", "user_id", "role_id"), scope="roles:write", danger="write", approval=True, body=False, pagination=None),
@@ -4444,6 +4615,7 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "radar.settings.get": OperationSpec(action="radar.settings.get", operation_id="radar_settings_get", method="GET", path="/radar/settings", path_params=(), scope="radar:read", danger="read", approval=True, body=False, pagination=None),
     "radar.settings.update": OperationSpec(action="radar.settings.update", operation_id="radar_settings_update", method="PATCH", path="/radar/settings", path_params=(), scope="radar:write", danger="write", approval=True, body=True, pagination=None),
     "roles.create": OperationSpec(action="roles.create", operation_id="roles_create", method="POST", path="/roles", path_params=(), scope="role_definitions:write", danger="write", approval=True, body=True, pagination=None),
+    "roles.definition.activate": OperationSpec(action="roles.definition.activate", operation_id="roles_definition_activate", method="POST", path="/roles/{id}/definition/activate", path_params=("id",), scope="role_definitions:write", danger="destructive", approval=True, body=True, pagination=None),
     "roles.delete": OperationSpec(action="roles.delete", operation_id="roles_delete", method="DELETE", path="/roles/{id}", path_params=("id",), scope="role_definitions:write", danger="destructive", approval=True, body=False, pagination=None),
     "roles.get": OperationSpec(action="roles.get", operation_id="roles_get", method="GET", path="/roles/{id}", path_params=("id",), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
     "roles.list": OperationSpec(action="roles.list", operation_id="roles_list", method="GET", path="/roles", path_params=(), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
@@ -4455,6 +4627,8 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "saml_apps.get": OperationSpec(action="saml_apps.get", operation_id="saml_apps_get", method="GET", path="/saml-apps/{id}", path_params=("id",), scope="saml_apps:read", danger="read", approval=True, body=False, pagination=None),
     "saml_apps.list": OperationSpec(action="saml_apps.list", operation_id="saml_apps_list", method="GET", path="/saml-apps", path_params=(), scope="saml_apps:read", danger="read", approval=True, body=False, pagination="cursor"),
     "saml_apps.update": OperationSpec(action="saml_apps.update", operation_id="saml_apps_update", method="PATCH", path="/saml-apps/{id}", path_params=("id",), scope="saml_apps:write", danger="critical", approval=True, body=True, pagination=None),
+    "signals.source.erasures.list": OperationSpec(action=None, operation_id="signals_source_erasures", method="GET", path="/signals/source/erasures", path_params=(), scope=None, danger=None, approval=False, body=False, pagination="cursor"),
+    "signals.source.list": OperationSpec(action=None, operation_id="signals_source_list", method="GET", path="/signals/source", path_params=(), scope=None, danger=None, approval=False, body=False, pagination="cursor"),
     "signin.policy.get": OperationSpec(action="signin.policy.get", operation_id="signin_policy_get", method="GET", path="/sign-in/policy", path_params=(), scope="signin:read", danger="read", approval=True, body=False, pagination=None),
     "signin.policy.inherit": OperationSpec(action="signin.policy.inherit", operation_id="signin_policy_inherit", method="DELETE", path="/sign-in/policy/organizations/{organization_id}", path_params=("organization_id",), scope="signin:write", danger="critical", approval=True, body=False, pagination=None),
     "signin.policy.update": OperationSpec(action="signin.policy.update", operation_id="signin_policy_update", method="PATCH", path="/sign-in/policy", path_params=(), scope="signin:write", danger="critical", approval=True, body=True, pagination=None),
@@ -4500,6 +4674,8 @@ ENVIRONMENT_OPERATIONS: Mapping[str, OperationSpec] = {
     "token_vault.secrets.list": OperationSpec(action="token_vault.secrets.list", operation_id="token_vault_secrets_list", method="GET", path="/token-vault/secrets", path_params=(), scope="token_vault:read", danger="read", approval=True, body=False, pagination="cursor"),
     "token_vault.secrets.revoke": OperationSpec(action="token_vault.secrets.revoke", operation_id="token_vault_secrets_revoke", method="POST", path="/token-vault/secrets/{id}/revoke", path_params=("id",), scope="token_vault:write", danger="destructive", approval=True, body=True, pagination=None),
     "token_vault.secrets.rotate": OperationSpec(action="token_vault.secrets.rotate", operation_id="token_vault_secrets_rotate", method="POST", path="/token-vault/secrets/{id}/rotate", path_params=("id",), scope="token_vault:write", danger="critical", approval=True, body=True, pagination=None),
+    "user_property_namespaces.configure": OperationSpec(action="user_property_namespaces.configure", operation_id="user_property_namespaces_configure", method="PUT", path="/user-property-namespaces/{name}", path_params=("name",), scope="user_property_namespaces:write", danger="critical", approval=True, body=True, pagination=None),
+    "user_property_namespaces.show": OperationSpec(action="user_property_namespaces.show", operation_id="user_property_namespaces_show", method="GET", path="/user-property-namespaces/{name}", path_params=("name",), scope="user_property_namespaces:read", danger="read", approval=True, body=False, pagination=None),
     "users.create": OperationSpec(action="users.create", operation_id="users_create", method="POST", path="/users", path_params=(), scope="users:write", danger="write", approval=True, body=True, pagination=None),
     "users.deactivate": OperationSpec(action="users.deactivate", operation_id="users_deactivate", method="DELETE", path="/users/{id}", path_params=("id",), scope="users:write", danger="destructive", approval=True, body=False, pagination=None),
     "users.environment_roles.get": OperationSpec(action="users.environment_roles.get", operation_id="users_environment_roles_get", method="GET", path="/users/{id}/environment-roles/{role_id}", path_params=("id", "role_id"), scope="roles:read", danger="read", approval=True, body=False, pagination=None),
@@ -4872,6 +5048,81 @@ class ApisMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["apis.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class AppCatalogMethods:
+    """``app_catalog.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def delete(self, key: str, body: AppCatalogDeleteBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def delete(self, key: str, body: AppCatalogDeleteBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def delete(self, key: str, body: AppCatalogDeleteBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Remove a catalog app without deleting its OAuth clients or user data.
+
+        Requires scope `app_catalog:write`. Danger: destructive.
+
+        ``DELETE /app-catalog/{key}`` · action ``app_catalog.delete``
+        Scope ``app_catalog:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["app_catalog.delete"], (key,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def list(self, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogListData]: ...
+
+    @overload
+    def list(self, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogListData] | PendingApprovalResult[AppCatalogListData]: ...
+
+    def list(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogListData] | PendingApprovalResult[AppCatalogListData]:
+        """List catalog apps, including drafts and visibility settings.
+
+        Requires scope `app_catalog:read`. Danger: read.
+
+        ``GET /app-catalog`` · action ``app_catalog.list``
+        Scope ``app_catalog:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["app_catalog.list"], (), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
+    def save(self, key: str, body: AppCatalogSaveBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogSaveData]: ...
+
+    @overload
+    def save(self, key: str, body: AppCatalogSaveBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogSaveData] | PendingApprovalResult[AppCatalogSaveData]: ...
+
+    def save(self, key: str, body: AppCatalogSaveBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogSaveData] | PendingApprovalResult[AppCatalogSaveData]:
+        """Create or replace a catalog app, its icon and visibility. Version zero creates; a stale version conflicts.
+
+        Requires scope `app_catalog:write`. Danger: write.
+
+        ``PUT /app-catalog/{key}`` · action ``app_catalog.save``
+        Scope ``app_catalog:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["app_catalog.save"], (key,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def show(self, key: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogShowData]: ...
+
+    @overload
+    def show(self, key: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogShowData] | PendingApprovalResult[AppCatalogShowData]: ...
+
+    def show(self, key: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppCatalogShowData] | PendingApprovalResult[AppCatalogShowData]:
+        """Read a catalog app and its publication settings.
+
+        Requires scope `app_catalog:read`. Danger: read.
+
+        ``GET /app-catalog/{key}`` · action ``app_catalog.show``
+        Scope ``app_catalog:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["app_catalog.show"], (key,), None, approval=approval, approval_id=approval_id, headers=headers)
+
+
 class ApprovalsMethods:
     """``approvals.*``"""
 
@@ -5082,6 +5333,23 @@ class AppsSettingsMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["apps.settings.backchannel_logout"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def client_credentials(self, id: str, body: AppsSettingsClientCredentialsBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App]: ...
+
+    @overload
+    def client_credentials(self, id: str, body: AppsSettingsClientCredentialsBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App] | PendingApprovalResult[App]: ...
+
+    def client_credentials(self, id: str, body: AppsSettingsClientCredentialsBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App] | PendingApprovalResult[App]:
+        """Turn client-credentials authentication on or off for a confidential app; other grants and scopes stay unchanged.
+
+        Requires scope `apps:write`. Danger: write.
+
+        ``PUT /apps/{id}/settings/client-credentials`` · action ``apps.settings.client_credentials``
+        Scope ``apps:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["apps.settings.client_credentials"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
     def token_exchange(self, id: str, body: AppsSettingsTokenExchangeBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[App]: ...
@@ -5548,6 +5816,30 @@ class AuditLogsMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["audit_logs.verify"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+
+class AuthenticatorMeMethods:
+    """``authenticator.me.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    def list(self, *, headers: Mapping[str, str] | None = None) -> ApiResponse[AuthenticatorMeListData]:
+        """Verified identity for the authenticator
+
+        Requires the provisioned public authenticator client, devices.manage and a DPoP proof. Available before device registration; revoked keys are refused.
+
+        ``GET /authenticator/me``
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["authenticator.me.list"], (), None, headers=headers)
+
+
+class AuthenticatorMethods:
+    """``authenticator.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.me = AuthenticatorMeMethods(core)
 
 
 class BrandingAppearanceMethods:
@@ -6561,6 +6853,23 @@ class InvitationsMethods:
         self._core = core
 
     @overload
+    def get(self, organization_id: str, invitation_id: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Invitation]: ...
+
+    @overload
+    def get(self, organization_id: str, invitation_id: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Invitation] | PendingApprovalResult[Invitation]: ...
+
+    def get(self, organization_id: str, invitation_id: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Invitation] | PendingApprovalResult[Invitation]:
+        """Get an invitation and its acceptance receipt, confined to its organization.
+
+        Requires scope `invitations:read`. Danger: read.
+
+        ``GET /organizations/{organization_id}/invitations/{invitation_id}`` · action ``invitations.get``
+        Scope ``invitations:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["invitations.get"], (organization_id, invitation_id), None, approval=approval, approval_id=approval_id, headers=headers)
+
+    @overload
     def list(self, organization_id: str, query: InvitationsListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[InvitationsListData]: ...
 
     @overload
@@ -6925,6 +7234,38 @@ class LogStreamsMethods:
         return self._core.call(ENVIRONMENT_OPERATIONS["log_streams.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class MembersAppsRolesMethods:
+    """``members.apps.roles.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def replace(self, organization_id: str, user_id: str, client_id: str, body: MembersAppsRolesReplaceBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RoleAssignments]: ...
+
+    @overload
+    def replace(self, organization_id: str, user_id: str, client_id: str, body: MembersAppsRolesReplaceBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RoleAssignments] | PendingApprovalResult[RoleAssignments]: ...
+
+    def replace(self, organization_id: str, user_id: str, client_id: str, body: MembersAppsRolesReplaceBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[RoleAssignments] | PendingApprovalResult[RoleAssignments]:
+        """Replace one app's member roles atomically. Other apps and the organization membership remain unchanged. An empty role list removes this app's access only.
+
+        Requires scope `roles:write`. Danger: write.
+
+        ``PUT /organizations/{organization_id}/members/{user_id}/apps/{client_id}/roles`` · action ``members.apps.roles.replace``
+        Scope ``roles:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["members.apps.roles.replace"], (organization_id, user_id, client_id), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class MembersAppsMethods:
+    """``members.apps.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.roles = MembersAppsRolesMethods(core)
+
+
 class MembersRolesMethods:
     """``members.roles.*``"""
 
@@ -7000,6 +7341,7 @@ class MembersMethods:
 
     def __init__(self, core: ManagementTransport) -> None:
         self._core = core
+        self.apps = MembersAppsMethods(core)
         self.roles = MembersRolesMethods(core)
 
     @overload
@@ -8083,6 +8425,30 @@ class RadarMethods:
         self.settings = RadarSettingsMethods(core)
 
 
+class RolesDefinitionMethods:
+    """``roles.definition.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def activate(self, id: str, body: RolesDefinitionActivateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Role]: ...
+
+    @overload
+    def activate(self, id: str, body: RolesDefinitionActivateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Role] | PendingApprovalResult[Role]: ...
+
+    def activate(self, id: str, body: RolesDefinitionActivateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Role] | PendingApprovalResult[Role]:
+        """Activate a reviewed application role definition for its existing holders.
+
+        Requires scope `role_definitions:write`. Danger: destructive.
+
+        ``POST /roles/{id}/definition/activate`` · action ``roles.definition.activate``
+        Scope ``role_definitions:write`` · danger: destructive.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["roles.definition.activate"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 class RolesPermissionsMethods:
     """``roles.permissions.*``"""
 
@@ -8129,6 +8495,7 @@ class RolesMethods:
 
     def __init__(self, core: ManagementTransport) -> None:
         self._core = core
+        self.definition = RolesDefinitionMethods(core)
         self.permissions = RolesPermissionsMethods(core)
 
     @overload
@@ -8313,6 +8680,68 @@ class SamlAppsMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ENVIRONMENT_OPERATIONS["saml_apps.update"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class SignalsSourceErasuresMethods:
+    """``signals.source.erasures.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    def list(self, query: SignalsSourceErasuresListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> ApiResponse[SignalsSourceErasuresListData]:
+        """Replay source deletion receipts
+
+        Requires `signals_source:read` on an environment-owner key. Replay this stream
+        before making a restored or newly backfilled consumer eligible. It retains only
+        opaque subject references and deletion facts beyond the raw-event replay window.
+        Publication order and cursor integrity match the event source. The credential
+        is checked on every page. Ordinary tenant grants cannot access this stream.
+
+        ``GET /signals/source/erasures``
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signals.source.erasures.list"], (), query, headers=headers)
+
+    def list_all(self, query: SignalsSourceErasuresListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[SignalsSourceErasuresListItem]:
+        """Every item of ``signals.source.erasures.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["signals.source.erasures.list"], (), query, headers=headers)
+
+
+class SignalsSourceMethods:
+    """``signals.source.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.erasures = SignalsSourceErasuresMethods(core)
+
+    def list(self, query: SignalsSourceListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> ApiResponse[SignalsSourceListData]:
+        """Read the environment-owner identity source
+
+        Requires an environment key with `signals_source:read` and explicit operator
+        opt-in for this environment. Organization grants and delegated user tokens
+        cannot read this source. Records include pre-organization authentication.
+        The cursor follows committed sequence order and is bound to the source generation.
+        Follow `next_cursor`, including on empty pages; a stale generation or purged
+        cursor requires an explicit restart. Pages are at most 1000 records / 1 MiB.
+        Data follows the Signals 2.0.0 identity event contracts. Scope is attached by
+        the consumer's explicit grant; producer_environment is always host-bound.
+        Replay is limited to seven days, including raw-IP retention. A heartbeat
+        proves exporter maintenance, not complete coverage of every identity flow.
+
+        ``GET /signals/source``
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["signals.source.list"], (), query, headers=headers)
+
+    def list_all(self, query: SignalsSourceListQuery | None = None, *, headers: Mapping[str, str] | None = None) -> Iterator[SignalsSourceListDataItem]:
+        """Every item of ``signals.source.list``, fetching pages as the iteration reaches them."""
+        return self._core.paginate(ENVIRONMENT_OPERATIONS["signals.source.list"], (), query, headers=headers)
+
+
+class SignalsMethods:
+    """``signals.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.source = SignalsSourceMethods(core)
 
 
 class SigninPolicyMethods:
@@ -9245,6 +9674,47 @@ class TokenVaultMethods:
         self.secrets = TokenVaultSecretsMethods(core)
 
 
+class UserPropertyNamespacesMethods:
+    """``user_property_namespaces.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def configure(self, name: str, body: UserPropertyNamespacesConfigureBody | None = None, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[UserPropertyNamespacesConfigureData]: ...
+
+    @overload
+    def configure(self, name: str, body: UserPropertyNamespacesConfigureBody | None = None, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[UserPropertyNamespacesConfigureData] | PendingApprovalResult[UserPropertyNamespacesConfigureData]: ...
+
+    def configure(self, name: str, body: UserPropertyNamespacesConfigureBody | None = None, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[UserPropertyNamespacesConfigureData] | PendingApprovalResult[UserPropertyNamespacesConfigureData]:
+        """Create or replace the app and webhook grants for a user-property namespace. Empty grants revoke access without deleting user data.
+
+        Requires scope `user_property_namespaces:write`. Danger: critical.
+
+        ``PUT /user-property-namespaces/{name}`` · action ``user_property_namespaces.configure``
+        Scope ``user_property_namespaces:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["user_property_namespaces.configure"], (name,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def show(self, name: str, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[UserPropertyNamespacesShowData]: ...
+
+    @overload
+    def show(self, name: str, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[UserPropertyNamespacesShowData] | PendingApprovalResult[UserPropertyNamespacesShowData]: ...
+
+    def show(self, name: str, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[UserPropertyNamespacesShowData] | PendingApprovalResult[UserPropertyNamespacesShowData]:
+        """Read the app and webhook grants for a user-property namespace.
+
+        Requires scope `user_property_namespaces:read`. Danger: read.
+
+        ``GET /user-property-namespaces/{name}`` · action ``user_property_namespaces.show``
+        Scope ``user_property_namespaces:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ENVIRONMENT_OPERATIONS["user_property_namespaces.show"], (name,), None, approval=approval, approval_id=approval_id, headers=headers)
+
+
 class UsersEnvironmentRolesMethods:
     """``users.environment_roles.*``"""
 
@@ -9868,10 +10338,12 @@ class EnvironmentClient(ManagementClient):
         self.action_approvals = ActionApprovalsMethods(core)
         self.api_keys = ApiKeysMethods(core)
         self.apis = ApisMethods(core)
+        self.app_catalog = AppCatalogMethods(core)
         self.approvals = ApprovalsMethods(core)
         self.apps = AppsMethods(core)
         self.audit = AuditMethods(core)
         self.audit_logs = AuditLogsMethods(core)
+        self.authenticator = AuthenticatorMethods(core)
         self.branding = BrandingMethods(core)
         self.directories = DirectoriesMethods(core)
         self.domains = DomainsMethods(core)
@@ -9892,10 +10364,12 @@ class EnvironmentClient(ManagementClient):
         self.radar = RadarMethods(core)
         self.roles = RolesMethods(core)
         self.saml_apps = SamlAppsMethods(core)
+        self.signals = SignalsMethods(core)
         self.signin = SigninMethods(core)
         self.sod_policies = SodPoliciesMethods(core)
         self.sso = SsoMethods(core)
         self.support_sessions = SupportSessionsMethods(core)
         self.token_vault = TokenVaultMethods(core)
+        self.user_property_namespaces = UserPropertyNamespacesMethods(core)
         self.users = UsersMethods(core)
         self.webhooks = WebhooksMethods(core)

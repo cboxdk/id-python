@@ -49,6 +49,7 @@ class Recorder:
         self.token_form: dict[str, str] = {}
         self.manifest_request: httpx.Request | None = None
         self.manifest_body: dict[str, object] = {}
+        self.ack_override: dict[str, object] = {}
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
@@ -60,15 +61,25 @@ class Recorder:
         if url == f"{ISSUER}/api/v1/apps/manifest":
             self.manifest_request = request
             self.manifest_body = json.loads(request.content)
+            received = json.loads(request.content)
+            manifest = AuthzManifest()
+            for permission in received["permissions"]:
+                manifest.permission(**permission)
+            for role in received["roles"]:
+                manifest.role(**role)
             if self.manifest_status >= 400:
                 return httpx.Response(self.manifest_status, json={"message": "rejected"})
             return httpx.Response(
                 self.manifest_status,
                 json={
                     "unchanged": False,
-                    "roles_declared": 1,
-                    "permissions_declared": 2,
+                    "roles_declared": len(received["roles"]),
+                    "permissions_declared": len(received["permissions"]),
+                    "client_id": CLIENT_ID,
+                    "version": received["version"],
+                    "checksum": manifest.checksum(),
                     "orphaned_roles": [],
+                    **self.ack_override,
                 },
             )
         return httpx.Response(404)
@@ -144,8 +155,32 @@ def test_publish_mints_apps_manifest_token_and_posts_manifest() -> None:
         "unchanged": False,
         "roles_declared": 1,
         "permissions_declared": 2,
+        "client_id": CLIENT_ID,
+        "version": build_manifest().to_dict()["version"],
+        "checksum": build_manifest().checksum(),
         "orphaned_roles": [],
     }
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"client_id": "another-app"},
+        {"version": "stale"},
+        {"checksum": "wrong"},
+        {"roles_declared": 0},
+        {"permissions_declared": 0},
+        {"unchanged": "false"},
+        {"roles_declared": True},
+        {"unchanged": True, "roles_declared": -1},
+        {"unchanged": True, "permissions_declared": -1},
+    ],
+)
+def test_publish_requires_bound_complete_acknowledgement(override: dict[str, object]) -> None:
+    recorder = Recorder()
+    recorder.ack_override = override
+    with pytest.raises(ManifestPublishError, match="acknowledge"):
+        make_client(recorder).publish_manifest(build_manifest())
 
 
 def test_publish_raises_on_rejected_push() -> None:

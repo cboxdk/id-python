@@ -26,9 +26,6 @@ class Organization(TypedDict):
     name: NotRequired[str]
     status: NotRequired[Literal["active", "suspended"]]
 
-    #: The workspace's projects with each one's plan/allowance. Present only for billing-readers (plans are per project).
-    projects: NotRequired[list[Project]]
-
 
 class Project(TypedDict):
     id: NotRequired[str]
@@ -36,8 +33,10 @@ class Project(TypedDict):
     slug: NotRequired[str]
     status: NotRequired[Literal["active", "suspended"]]
 
-    #: This project's plan environment allowance.
+    #: Local per-project ceiling; creating environments also requires sufficient current Billing entitlement.
     environment_limit: NotRequired[int]
+
+    #: Number of environments visible to the caller.
     environments_used: NotRequired[int]
 
 
@@ -58,11 +57,17 @@ class Environment(TypedDict):
 
 class Member(TypedDict):
     id: NotRequired[str]
-    email: NotRequired[str]
+    email: NotRequired[str | None]
     name: NotRequired[str | None]
+
+    #: Shared membership tier; only current owner implies app authority.
     role: NotRequired[Literal["owner", "admin", "developer", "member", "viewer"]]
-    status: NotRequired[Literal["active", "invited"]]
+    roles: NotRequired[list[Literal["admin", "developer", "billing", "viewer"]]]
+    roles_version: NotRequired[str]
+    status: NotRequired[Literal["active", "invited", "suspended"]]
     all_environments: NotRequired[bool]
+    environment_ids: NotRequired[list[str]]
+    environment_access_version: NotRequired[str]
 
 
 class CreatedEnvironment(Environment):
@@ -94,7 +99,7 @@ class WorkspaceKey(TypedDict):
     role: Literal["owner", "admin", "developer", "member", "viewer"]
 
     #: Null when the role alone bounds the key.
-    scopes: NotRequired[list[Literal["workspace:read", "projects:write", "environments:write", "team:read", "team:write", "keys:write", "settings:write"]] | None]
+    scopes: NotRequired[list[Literal["workspace:read", "projects:write", "environments:write", "team:read", "team:write", "keys:write", "settings:write", "billing:write"]] | None]
 
     #: The key that minted it, if a key did. Revoking the parent revokes it.
     parent_key_id: NotRequired[str | None]
@@ -112,12 +117,21 @@ class WorkspaceKey(TypedDict):
 class TeamInvitation(TypedDict):
     id: str
     email: str
-    role: Literal["admin", "developer", "member", "viewer"]
+    role: NotRequired[Literal["admin", "developer", "member", "viewer"]]
+    roles: list[Literal["admin", "developer", "billing", "viewer"]]
+    app_role_label: NotRequired[str | None]
 
     #: The person, or the API key, that sent it — by name.
     invited_by: NotRequired[str | None]
     invited_at: NotRequired[str | None]
     expires_at: str
+
+
+class TeamInvitationReceipt(TypedDict):
+    id: str
+    email: str
+    roles: list[Literal["admin", "developer", "billing", "viewer"]]
+    status: Literal["invited"]
 
 
 class CustomDomainPendingOption1(TypedDict):
@@ -172,6 +186,17 @@ class ActionApprovalsGetData(TypedDict):
     status: Literal["pending", "approved", "denied", "expired", "consumed"]
 
 
+class BillingAccountUpdateBody(TypedDict):
+    billing_email: str
+    invoice_name: str
+    address_line1: str
+    address_line2: NotRequired[str | None]
+    postal_code: str
+    city: str
+    country: Literal["AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT", "AU", "AW", "AX", "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT", "BV", "BW", "BY", "BZ", "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CR", "CU", "CV", "CW", "CX", "CY", "CZ", "DE", "DJ", "DK", "DM", "DO", "DZ", "EC", "EE", "EG", "EH", "ER", "ES", "ET", "FI", "FJ", "FK", "FM", "FO", "FR", "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL", "GM", "GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY", "HK", "HM", "HN", "HR", "HT", "HU", "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT", "JE", "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN", "KP", "KR", "KW", "KY", "KZ", "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY", "MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ", "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU", "NZ", "OM", "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PN", "PR", "PS", "PT", "PW", "PY", "QA", "RE", "RO", "RS", "RU", "RW", "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM", "SN", "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ", "TC", "TD", "TF", "TG", "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ", "UA", "UG", "UM", "US", "UY", "UZ", "VA", "VC", "VE", "VG", "VI", "VN", "VU", "WF", "WS", "YE", "YT", "ZA", "ZM", "ZW"]
+    tax_id: NotRequired[str | None]
+
+
 class EnvironmentsCreateBodyInitialKey(TypedDict):
     """Mint the environment's first management key in the same call."""
 
@@ -221,7 +246,7 @@ class KeysWorkspaceCreateBody(TypedDict):
     role: Literal["admin", "developer", "member", "viewer"]
 
     #: Narrow the key below its role. Left out, the role alone bounds it — or, minted by a key with scopes, that key's scopes.
-    scopes: NotRequired[list[Literal["workspace:read", "projects:write", "environments:write", "team:read", "team:write", "keys:write", "settings:write"]] | None]
+    scopes: NotRequired[list[Literal["workspace:read", "projects:write", "environments:write", "team:read", "team:write", "keys:write", "billing:write", "settings:write"]] | None]
 
     #: When it stops working. Left out, it does not expire — or, minted by a key that does, expires with it.
     expires_at: NotRequired[str | None]
@@ -241,7 +266,7 @@ KeysWorkspaceListData: TypeAlias = 'list[WorkspaceKey]'
 class ProjectsCreateBody(TypedDict):
     name: str
 
-    #: This project's plan environment allowance (default 2).
+    #: Optional lower per-project environment allowance. Defaults to the account's current Billing entitlement and cannot exceed it.
     environment_limit: NotRequired[int]
 
 
@@ -253,6 +278,8 @@ class ProjectsRenameBody(TypedDict):
 
 
 class TeamEnvironmentAccessBody(TypedDict):
+    environment_access_version: str
+
     #: True: every environment, including ones created later.
     all_environments: bool
 
@@ -266,7 +293,7 @@ TeamInvitationsListData: TypeAlias = 'list[TeamInvitation]'
 class TeamInviteBody(TypedDict):
     email: str
     name: NotRequired[str | None]
-    role: Literal["admin", "developer", "member", "viewer"]
+    roles: list[Literal["admin", "developer", "billing", "viewer"]]
 
 
 class TeamListQuery(TypedDict):
@@ -277,8 +304,13 @@ class TeamListQuery(TypedDict):
 TeamListData: TypeAlias = 'list[Member]'
 
 
+class TeamRemoveBody(TypedDict):
+    roles_version: str
+
+
 class TeamRoleBody(TypedDict):
-    role: Literal["admin", "developer", "member", "viewer"]
+    roles: list[Literal["viewer", "developer", "billing", "admin"]]
+    roles_version: str
 
 
 class WorkspaceSettingsUpdateBody(TypedDict):
@@ -291,6 +323,9 @@ class WorkspaceSettingsUpdateBody(TypedDict):
 #: Every operation of the Cbox ID — Workspace Management API, keyed by action name.
 WORKSPACE_OPERATIONS: Mapping[str, OperationSpec] = {
     "action_approvals.get": OperationSpec(action=None, operation_id=None, method="GET", path="/workspace/action-approvals/{id}", path_params=("id",), scope=None, danger=None, approval=False, body=False, pagination=None),
+    "billing.account.update": OperationSpec(action="billing.account.update", operation_id="billing_account_update", method="PATCH", path="/workspace/billing/account", path_params=(), scope="billing:write", danger="write", approval=True, body=True, pagination=None),
+    "billing.payment_method.default": OperationSpec(action="billing.payment_method.default", operation_id="billing_payment_method_default", method="PATCH", path="/workspace/billing/payment-methods/{id}/default", path_params=("id",), scope="billing:write", danger="write", approval=True, body=False, pagination=None),
+    "billing.payment_method.remove": OperationSpec(action="billing.payment_method.remove", operation_id="billing_payment_method_remove", method="DELETE", path="/workspace/billing/payment-methods/{id}", path_params=("id",), scope="billing:write", danger="write", approval=True, body=False, pagination=None),
     "environments.create": OperationSpec(action="environments.create", operation_id="environments_create", method="POST", path="/workspace/environments", path_params=(), scope="environments:write", danger="critical", approval=True, body=True, pagination=None),
     "environments.domain.remove": OperationSpec(action="environments.domain.remove", operation_id="environments_domain_remove", method="DELETE", path="/workspace/environments/{environment_id}/domain", path_params=("environment_id",), scope="environments:write", danger="destructive", approval=True, body=False, pagination=None),
     "environments.domain.request": OperationSpec(action="environments.domain.request", operation_id="environments_domain_request", method="POST", path="/workspace/environments/{environment_id}/domain", path_params=("environment_id",), scope="environments:write", danger="write", approval=True, body=True, pagination=None),
@@ -313,7 +348,7 @@ WORKSPACE_OPERATIONS: Mapping[str, OperationSpec] = {
     "team.invitations.revoke": OperationSpec(action="team.invitations.revoke", operation_id="team_invitations_revoke", method="DELETE", path="/workspace/invitations/{id}", path_params=("id",), scope="team:write", danger="destructive", approval=True, body=False, pagination=None),
     "team.invite": OperationSpec(action="team.invite", operation_id="team_invite", method="POST", path="/workspace/members", path_params=(), scope="team:write", danger="write", approval=True, body=True, pagination=None),
     "team.list": OperationSpec(action="team.list", operation_id="team_list", method="GET", path="/workspace/members", path_params=(), scope="team:read", danger="read", approval=True, body=False, pagination="page"),
-    "team.remove": OperationSpec(action="team.remove", operation_id="team_remove", method="DELETE", path="/workspace/members/{id}", path_params=("id",), scope="team:write", danger="destructive", approval=True, body=False, pagination=None),
+    "team.remove": OperationSpec(action="team.remove", operation_id="team_remove", method="DELETE", path="/workspace/members/{id}", path_params=("id",), scope="team:write", danger="destructive", approval=True, body=True, pagination=None),
     "team.role": OperationSpec(action="team.role", operation_id="team_role", method="PATCH", path="/workspace/members/{id}/role", path_params=("id",), scope="team:write", danger="write", approval=True, body=True, pagination=None),
     "team.transfer_ownership": OperationSpec(action="team.transfer_ownership", operation_id="team_transfer_ownership", method="POST", path="/workspace/members/{id}/transfer-ownership", path_params=("id",), scope="team:write", danger="critical", approval=True, body=False, pagination=None),
     "workspace.get": OperationSpec(action="workspace.get", operation_id="workspace_get", method="GET", path="/workspace", path_params=(), scope="workspace:read", danger="read", approval=True, body=False, pagination=None),
@@ -339,6 +374,80 @@ class ActionApprovalsMethods:
         ``GET /workspace/action-approvals/{id}``
         """
         return self._core.call(WORKSPACE_OPERATIONS["action_approvals.get"], (id,), None, headers=headers)
+
+
+class BillingAccountMethods:
+    """``billing.account.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def update(self, body: BillingAccountUpdateBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def update(self, body: BillingAccountUpdateBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def update(self, body: BillingAccountUpdateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Update the workspace billing contact and invoice address.
+
+        Requires scope `billing:write` and a role that may `manage-billing`. Danger: write.
+
+        ``PATCH /workspace/billing/account`` · action ``billing.account.update``
+        Scope ``billing:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(WORKSPACE_OPERATIONS["billing.account.update"], (), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class BillingPaymentMethodMethods:
+    """``billing.payment_method.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def default(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def default(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def default(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Choose the workspace default payment card.
+
+        Requires scope `billing:write` and a role that may `manage-billing`. Danger: write.
+
+        ``PATCH /workspace/billing/payment-methods/{id}/default`` · action ``billing.payment_method.default``
+        Scope ``billing:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(WORKSPACE_OPERATIONS["billing.payment_method.default"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def remove(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def remove(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def remove(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Remove an unneeded payment card from this workspace.
+
+        Requires scope `billing:write` and a role that may `manage-billing`. Danger: write.
+
+        ``DELETE /workspace/billing/payment-methods/{id}`` · action ``billing.payment_method.remove``
+        Scope ``billing:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(WORKSPACE_OPERATIONS["billing.payment_method.remove"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class BillingMethods:
+    """``billing.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.account = BillingAccountMethods(core)
+        self.payment_method = BillingPaymentMethodMethods(core)
 
 
 class EnvironmentsDomainMethods:
@@ -416,7 +525,7 @@ class EnvironmentsMethods:
         """Create an environment
 
         Requires scope `environments:write` and the `manage-environments` capability
-        (owner/admin/developer). Danger: critical — with `initial_key` it mints a credential.
+        (`id:write` for human members, or current ownership). Danger: critical — with `initial_key` it mints a credential.
 
         With `initial_key`, the environment's first management key is minted in the same
         call and returned once as `initial_key.token` — enough for an agent holding one
@@ -438,7 +547,7 @@ class EnvironmentsMethods:
     def list(self, query: EnvironmentsListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[EnvironmentsListData] | PendingApprovalResult[EnvironmentsListData]:
         """List environments
 
-        Requires scope `workspace:read` (any role).
+        Requires scope `workspace:read` and permission to read environments. Returns only currently permitted environments; Billing-only members cannot list them.
 
         ``GET /workspace/environments`` · action ``environments.list``
         Scope ``workspace:read`` · danger: read.
@@ -603,7 +712,7 @@ class ProjectsMethods:
     def create(self, body: ProjectsCreateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Project] | PendingApprovalResult[Project]:
         """Create a project
 
-        Stand up another independently-billed IdP product. Requires scope `projects:write` and the `manage-environments` capability (owner/admin/developer).
+        Stand up another independently-billed IdP product. Requires scope `projects:write` and the `manage-environments` capability (`id:write` for human members, or current ownership).
 
         ``POST /workspace/projects`` · action ``projects.create``
         Scope ``projects:write`` · danger: write.
@@ -620,7 +729,7 @@ class ProjectsMethods:
     def list(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[ProjectsListData] | PendingApprovalResult[ProjectsListData]:
         """List projects
 
-        Requires scope `workspace:read` (any role). The workspace's projects (IdP products). Each carries its own plan and environment allowance.
+        Requires scope `workspace:read` and permission to read environments. Human callers see only projects containing environments they may access; environment counts include only those environments. Billing-only members cannot list projects.
 
         ``GET /workspace/projects`` · action ``projects.list``
         Scope ``workspace:read`` · danger: read.
@@ -704,12 +813,12 @@ class TeamInvitationsMethods:
         return self._core.call(WORKSPACE_OPERATIONS["team.invitations.list"], (), None, approval=approval, approval_id=approval_id, headers=headers)
 
     @overload
-    def resend(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member]: ...
+    def resend(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationReceipt]: ...
 
     @overload
-    def resend(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]: ...
+    def resend(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationReceipt] | PendingApprovalResult[TeamInvitationReceipt]: ...
 
-    def resend(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]:
+    def resend(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationReceipt] | PendingApprovalResult[TeamInvitationReceipt]:
         """Re-send an invitation
 
         Requires scope `team:write` and the `manage-members` capability. Mails a fresh link; the earlier link stops
@@ -765,19 +874,18 @@ class TeamMethods:
         return self._core.call(WORKSPACE_OPERATIONS["team.environment_access"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
-    def invite(self, body: TeamInviteBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member]: ...
+    def invite(self, body: TeamInviteBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationReceipt]: ...
 
     @overload
-    def invite(self, body: TeamInviteBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]: ...
+    def invite(self, body: TeamInviteBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationReceipt] | PendingApprovalResult[TeamInvitationReceipt]: ...
 
-    def invite(self, body: TeamInviteBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]:
+    def invite(self, body: TeamInviteBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamInvitationReceipt] | PendingApprovalResult[TeamInvitationReceipt]:
         """Invite a member
 
-        Requires scope `team:write` and the `manage-members` capability (owner/admin). Invites the address onto the
-        workspace's team — the same invitation the console's Team page sends: a mail naming
-        this key as the inviter and the role, with a signed link on which the invitee sets a
-        password and is signed in. Owner is never invited; ownership is transferred. An
-        earlier pending invitation for the same address is superseded. List, re-send and
+        Requires scope `team:write` and the `manage-members` capability (`members:manage` for human members, or current ownership). Invites the address onto the
+        ID product team with the selected app roles. Existing shared membership and other
+        apps are preserved. Owner is never invited; ownership is transferred separately. An
+        earlier pending invitation for the same address and this app is superseded. List, re-send and
         withdraw it under `/workspace/invitations`.
 
         ``POST /workspace/members`` · action ``team.invite``
@@ -795,7 +903,7 @@ class TeamMethods:
     def list(self, query: TeamListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[TeamListData] | PendingApprovalResult[TeamListData]:
         """List members
 
-        Requires scope `team:read` and the `read-members` capability (owner/admin/viewer). The roster is PII — a developer key is refused.
+        Requires scope `team:read` and the `read-members` capability (`members:read` for human members, or current ownership). The roster contains personal information; a machine key also needs an explicit role allowing member reads.
 
         ``GET /workspace/members`` · action ``team.list``
         Scope ``team:read`` · danger: read.
@@ -808,13 +916,13 @@ class TeamMethods:
         return self._core.paginate(WORKSPACE_OPERATIONS["team.list"], (), query, headers=headers)
 
     @overload
-    def remove(self, id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+    def remove(self, id: str, body: TeamRemoveBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
 
     @overload
-    def remove(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+    def remove(self, id: str, body: TeamRemoveBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
 
-    def remove(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
-        """Remove a member from the workspace's team. The owner is never removed; transfer ownership first.
+    def remove(self, id: str, body: TeamRemoveBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Remove native ID app roles while preserving shared organization membership and other apps. The current owner cannot be removed.
 
         Requires scope `team:write` and a role that may `manage-members`. Danger: destructive.
 
@@ -822,7 +930,7 @@ class TeamMethods:
         Scope ``team:write`` · danger: destructive.
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
-        return self._core.call(WORKSPACE_OPERATIONS["team.remove"], (id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+        return self._core.call(WORKSPACE_OPERATIONS["team.remove"], (id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
     @overload
     def role(self, id: str, body: TeamRoleBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member]: ...
@@ -831,7 +939,7 @@ class TeamMethods:
     def role(self, id: str, body: TeamRoleBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]: ...
 
     def role(self, id: str, body: TeamRoleBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Member] | PendingApprovalResult[Member]:
-        """Change a team member's role (admin, developer, member or viewer). The owner's role changes only by transferring ownership.
+        """Replace native ID app roles atomically. Shared organization membership is preserved.
 
         Requires scope `team:write` and a role that may `manage-members`. Danger: write.
 
@@ -848,7 +956,7 @@ class TeamMethods:
     def transfer_ownership(self, id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
 
     def transfer_ownership(self, id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
-        """Make another member the workspace's owner; the current owner stays on as an admin. Only the owner, signed in, may do this.
+        """Transfer shared organization ownership. Existing app roles are preserved; the previous owner may lose native ID access. Only the current owner, signed in, may do this.
 
         Requires scope `team:write` and a role that may `manage-members`. Danger: critical.
 
@@ -874,7 +982,7 @@ class WorkspaceSettingsMethods:
     def update(self, body: WorkspaceSettingsUpdateBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Organization] | PendingApprovalResult[Organization]:
         """Rename the workspace.
 
-        Requires scope `settings:write` and a role that may `manage-members`. Danger: write.
+        Requires scope `settings:write` and a role that may `own-organization` and `manage-members`. Danger: write.
 
         ``PATCH /workspace`` · action ``workspace.settings.update``
         Scope ``settings:write`` · danger: write.
@@ -899,7 +1007,7 @@ class WorkspaceMethods:
     def get(self, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Organization] | PendingApprovalResult[Organization]:
         """Get the workspace
 
-        Requires scope `workspace:read` (any role). Returns the workspace's identity. The `projects` block (each project's plan/allowance) is included only for keys whose role can read billing (owner/admin/viewer — not developer).
+        Requires scope `workspace:read` and current workspace access. Returns only the workspace identity and status, including for members with only the Billing app role.
 
         ``GET /workspace`` · action ``workspace.get``
         Scope ``workspace:read`` · danger: read.
@@ -926,6 +1034,7 @@ class WorkspaceClient(ManagementClient):
 
     def _bind(self, core: ManagementTransport) -> None:
         self.action_approvals = ActionApprovalsMethods(core)
+        self.billing = BillingMethods(core)
         self.environments = EnvironmentsMethods(core)
         self.keys = KeysMethods(core)
         self.projects = ProjectsMethods(core)

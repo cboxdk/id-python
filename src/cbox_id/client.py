@@ -16,6 +16,7 @@ from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from . import claims as _claims
 from .authz import AuthzManifest
+from .decisions import PermissionDecision, request_decision
 from .errors import (
     AuthenticationError,
     ConfigurationError,
@@ -524,6 +525,21 @@ class CboxIdClient:
         if response.status_code >= 400:
             raise AuthenticationError.from_response("Revocation request failed", response)
 
+    def check_permissions(
+        self, access_token: str, subject: str, organization: str | None, permissions: Sequence[str]
+    ) -> PermissionDecision:
+        """Check current app authority on each request/job; never reuse positive decisions."""
+        return request_decision(
+            self._http,
+            self._config.issuer,
+            self._config.client_id,
+            access_token,
+            subject,
+            organization,
+            permissions,
+            self._config.timeout_seconds,
+        )
+
     def publish_manifest(self, manifest: AuthzManifest) -> dict[str, Any]:
         """Publish this app's declared roles & permissions manifest to Cbox ID.
 
@@ -543,16 +559,45 @@ class CboxIdClient:
 
         token = self.machine_token(scopes=["apps.manifest"])
         url = f"{self._config.issuer.rstrip('/')}/api/v1/apps/manifest"
-        response = self._http.post(
-            url,
-            json=manifest.to_dict(),
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-        )
-        if response.status_code >= 400:
-            raise ManifestPublishError(
-                f"Manifest push failed: HTTP {response.status_code} {response.text}"
+        try:
+            response = self._http.post(
+                url,
+                json=manifest.to_dict(),
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                follow_redirects=False,
             )
-        result: dict[str, Any] = response.json()
+        except httpx.HTTPError:
+            raise ManifestPublishError("Manifest publication could not be verified.") from None
+        if not response.is_success:
+            raise ManifestPublishError(f"Manifest push failed: HTTP {response.status_code}")
+        try:
+            result: dict[str, Any] = response.json()
+        except ValueError:
+            raise ManifestPublishError(
+                "Cbox ID returned an invalid manifest acknowledgement."
+            ) from None
+        sent = manifest.to_dict()
+        if (
+            not isinstance(result, dict)
+            or result.get("client_id") != self._config.client_id
+            or result.get("version") != sent["version"]
+            or result.get("checksum") != manifest.checksum()
+            or type(result.get("unchanged")) is not bool
+            or type(result.get("roles_declared")) is not int
+            or type(result.get("permissions_declared")) is not int
+            or result["roles_declared"] < 0
+            or result["permissions_declared"] < 0
+            or (
+                not result["unchanged"]
+                and (
+                    result["roles_declared"] != len(sent["roles"])
+                    or result["permissions_declared"] != len(sent["permissions"])
+                )
+            )
+        ):
+            raise ManifestPublishError(
+                "Cbox ID did not acknowledge this app and its complete authorization manifest."
+            )
         return result
 
     def verify_webhook(
@@ -787,6 +832,11 @@ def _assert_secure_issuer(issuer: str) -> None:
     (RFC 8252), and a development instance runs there.
     """
     parsed = urlparse(issuer)
+
+    if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ConfigurationError(
+            "Cbox ID issuer must have a host and no credentials, query or fragment."
+        )
 
     if parsed.scheme == "https":
         return

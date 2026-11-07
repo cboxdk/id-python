@@ -60,6 +60,66 @@ UUID4 = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 # ── Requests ─────────────────────────────────────────────────────────────────────────────
 
 
+def test_native_removal_preserves_workspace_and_reviewed_app_role_version() -> None:
+    fake = FakeApi(httpx.Response(204))
+    sdk = WorkspaceClient(base_url=HOST, api_key="cbid_ws_key", transport=fake.transport)
+    sdk.team.remove(
+        "member-a",
+        {"roles_version": "roles-reviewed"},
+        headers={"Cbox-Organization": "org-selected"},
+    )
+    assert len(fake.calls) == 1
+    assert fake.calls[0].method == "DELETE"
+    assert fake.calls[0].url == f"{API}/workspace/members/member-a"
+    assert fake.calls[0].headers["Cbox-Organization"] == "org-selected"
+    assert fake.calls[0].body == {"roles_version": "roles-reviewed"}
+
+
+def test_native_roles_and_row_versions_target_the_exact_workspace() -> None:
+    receipt = {
+        "id": "invite-a",
+        "email": "person@example.test",
+        "roles": ["viewer", "billing"],
+        "status": "invited",
+    }
+    member = {
+        "id": "member-a",
+        "email": None,
+        "roles": ["viewer"],
+        "roles_version": "roles-2",
+        "environment_access_version": "rows-2",
+    }
+    fake = FakeApi(
+        json_response({"data": receipt}),
+        json_response({"data": member}),
+        json_response({"data": member}),
+    )
+    sdk = WorkspaceClient(base_url=HOST, api_key="cbid_ws_key", transport=fake.transport)
+    headers = {"Cbox-Organization": "org-selected"}
+    invitation = sdk.team.invite(
+        {"email": "person@example.test", "roles": ["viewer", "billing"]}, headers=headers
+    )
+    assert invitation.data["status"] == "invited"
+    sdk.team.role("member-a", {"roles": ["viewer"], "roles_version": "roles-1"}, headers=headers)
+    access = sdk.team.environment_access(
+        "member-a",
+        {
+            "all_environments": False,
+            "environment_ids": ["environment-a"],
+            "environment_access_version": "rows-1",
+        },
+        headers=headers,
+    )
+    assert access.data["email"] is None
+    assert [call.headers["Cbox-Organization"] for call in fake.calls] == ["org-selected"] * 3
+    assert fake.calls[1].body == {"roles": ["viewer"], "roles_version": "roles-1"}
+    assert fake.calls[2].body == {
+        "all_environments": False,
+        "environment_ids": ["environment-a"],
+        "environment_access_version": "rows-1",
+    }
+
+
 def test_sends_the_key_as_a_bearer_token_and_unwraps_the_envelope() -> None:
     fake = FakeApi(json_response({"data": APP}, 201))
     result = env_client(fake).apps.create({"name": "Billing", "type": "web"})

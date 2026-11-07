@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Literal, overload
+from typing import Any, Literal, TypeAlias, overload
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -20,6 +20,17 @@ class Profile(TypedDict):
     id: str
     name: str | None
     email: str | None
+
+
+class Passkey(TypedDict):
+    id: str
+
+    #: What you call it — one to 64 characters.
+    name: str
+    created_at: NotRequired[str | None]
+
+    #: When it last signed you in; null if it never has since this was recorded.
+    last_used_at: NotRequired[str | None]
 
 
 class SessionsRevoked(TypedDict):
@@ -75,9 +86,66 @@ class ApiKeysCreateBody(TypedDict):
     expires_at: NotRequired[str | None]
 
 
+class AppsListQuery(TypedDict):
+    organization_id: NotRequired[str | None]
+
+
+class AppsListDataItem(TypedDict):
+    key: str
+    name: str
+    description: str | None
+    launch_url: str
+    icon_url: str | None
+    position: int
+    version: int
+
+
+AppsListData: TypeAlias = 'list[AppsListDataItem]'
+
+
+EmailConfirmationSendData: TypeAlias = dict[str, Any]
+
+
+class PasskeysRenameBody(TypedDict):
+    #: What to call the passkey: one to 64 characters, no line breaks.
+    name: str
+
+
 class ProfileUpdateBody(TypedDict):
     #: Your display name.
     name: str
+
+
+class TotpRenameBody(TypedDict):
+    name: str
+
+
+class WaitlistsJoinBody(TypedDict):
+    #: An active team you belong to; required for feature waitlists.
+    organization: NotRequired[str | None]
+
+    #: Feature updates or participation in a test group.
+    interest: NotRequired[Literal["notify", "test"] | None]
+
+    #: Optional two-letter country code.
+    country: NotRequired[str | None]
+
+    #: Answers by the programme’s question keys, at most 2000 characters each.
+    answers: NotRequired[dict[str, Any]]
+
+    #: A stable UUID for this signup attempt, also used for Billing idempotency.
+    reference: str
+
+
+WaitlistsJoinData: TypeAlias = dict[str, Any]
+
+
+class WaitlistsLeaveBody(TypedDict):
+    organization: str
+    reference: str
+
+
+WaitlistsLeaveData: TypeAlias = dict[str, Any]
 
 
 # ── Operations ────────────────────────────────────────────────────────────────────────────────────
@@ -89,15 +157,23 @@ ACCOUNT_OPERATIONS: Mapping[str, OperationSpec] = {
     "account.api_keys.create": OperationSpec(action="account.api_keys.create", operation_id="account_api_keys_create", method="POST", path="/me/organizations/{organization_id}/api-keys", path_params=("organization_id",), scope="account:api_keys:write", danger="critical", approval=True, body=True, pagination=None),
     "account.api_keys.revoke": OperationSpec(action="account.api_keys.revoke", operation_id="account_api_keys_revoke", method="DELETE", path="/me/organizations/{organization_id}/api-keys/{key_id}", path_params=("organization_id", "key_id"), scope="account:api_keys:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.applications.revoke": OperationSpec(action="account.applications.revoke", operation_id="account_applications_revoke", method="DELETE", path="/me/applications/{client_id}", path_params=("client_id",), scope="account:applications:write", danger="destructive", approval=True, body=False, pagination=None),
+    "account.apps.list": OperationSpec(action="account.apps.list", operation_id="account_apps_list", method="GET", path="/me/apps", path_params=(), scope="account:apps:read", danger="read", approval=True, body=False, pagination=None),
     "account.devices.remove": OperationSpec(action="account.devices.remove", operation_id="account_devices_remove", method="DELETE", path="/me/devices/{device_id}", path_params=("device_id",), scope="account:devices:write", danger="destructive", approval=True, body=False, pagination=None),
+    "account.email.confirmation.send": OperationSpec(action="account.email.confirmation.send", operation_id="account_email_confirmation_send", method="POST", path="/me/email/confirmation", path_params=(), scope="account:profile:write", danger="write", approval=True, body=False, pagination=None),
     "account.mfa.sms.remove": OperationSpec(action="account.mfa.sms.remove", operation_id="account_mfa_sms_remove", method="DELETE", path="/me/mfa/sms", path_params=(), scope="account:sign_in:write", danger="critical", approval=True, body=False, pagination=None),
     "account.organizations.leave": OperationSpec(action="account.organizations.leave", operation_id="account_organizations_leave", method="POST", path="/me/organizations/{organization_id}/leave", path_params=("organization_id",), scope="account:organizations:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.passkeys.remove": OperationSpec(action="account.passkeys.remove", operation_id="account_passkeys_remove", method="DELETE", path="/me/passkeys/{passkey_id}", path_params=("passkey_id",), scope="account:sign_in:write", danger="critical", approval=True, body=False, pagination=None),
+    "account.passkeys.rename": OperationSpec(action="account.passkeys.rename", operation_id="account_passkeys_rename", method="PATCH", path="/me/passkeys/{passkey_id}", path_params=("passkey_id",), scope="account:sign_in:write", danger="write", approval=True, body=True, pagination=None),
     "account.pipes.disconnect": OperationSpec(action="account.pipes.disconnect", operation_id="account_pipes_disconnect", method="DELETE", path="/me/pipes/{provider}", path_params=("provider",), scope="account:pipes:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.profile.update": OperationSpec(action="account.profile.update", operation_id="account_profile_update", method="PATCH", path="/me/profile", path_params=(), scope="account:profile:write", danger="write", approval=True, body=True, pagination=None),
     "account.sessions.revoke": OperationSpec(action="account.sessions.revoke", operation_id="account_sessions_revoke", method="DELETE", path="/me/sessions/{session_id}", path_params=("session_id",), scope="account:sessions:write", danger="destructive", approval=True, body=False, pagination=None),
     "account.sessions.revoke_others": OperationSpec(action="account.sessions.revoke_others", operation_id="account_sessions_revoke_others", method="POST", path="/me/sessions/revoke-others", path_params=(), scope="account:sessions:write", danger="critical", approval=True, body=False, pagination=None),
+    "account.sign_in_methods.disconnect": OperationSpec(action="account.sign_in_methods.disconnect", operation_id="account_sign_in_methods_disconnect", method="DELETE", path="/me/sign-in-methods/{identity_id}", path_params=("identity_id",), scope="account:sign_in:write", danger="critical", approval=True, body=False, pagination=None),
     "account.social.unlink": OperationSpec(action="account.social.unlink", operation_id="account_social_unlink", method="DELETE", path="/me/social/{provider}", path_params=("provider",), scope="account:sign_in:write", danger="critical", approval=True, body=False, pagination=None),
+    "account.totp.remove": OperationSpec(action="account.totp.remove", operation_id="account_totp_remove", method="DELETE", path="/me/two-factor/apps/{factor_id}", path_params=("factor_id",), scope="account:sign_in:write", danger="critical", approval=True, body=False, pagination=None),
+    "account.totp.rename": OperationSpec(action="account.totp.rename", operation_id="account_totp_rename", method="PATCH", path="/me/two-factor/apps/{factor_id}", path_params=("factor_id",), scope="account:sign_in:write", danger="write", approval=True, body=True, pagination=None),
+    "account.waitlists.join": OperationSpec(action="account.waitlists.join", operation_id="account_waitlists_join", method="POST", path="/me/services/{program}/waitlist", path_params=("program",), scope="account:waitlists:write", danger="write", approval=True, body=True, pagination=None),
+    "account.waitlists.leave": OperationSpec(action="account.waitlists.leave", operation_id="account_waitlists_leave", method="POST", path="/me/services/{program}/waitlist/leave", path_params=("program",), scope="account:waitlists:write", danger="write", approval=True, body=True, pagination=None),
 }
 
 
@@ -185,6 +261,30 @@ class ApplicationsMethods:
         return self._core.call(ACCOUNT_OPERATIONS["account.applications.revoke"], (client_id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class AppsMethods:
+    """``apps.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def list(self, query: AppsListQuery | None = None, *, approval: Literal["wait"] = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsListData]: ...
+
+    @overload
+    def list(self, query: AppsListQuery | None = None, *, approval: Literal["return"], approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsListData] | PendingApprovalResult[AppsListData]: ...
+
+    def list(self, query: AppsListQuery | None = None, *, approval: ApprovalMode = "wait", approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[AppsListData] | PendingApprovalResult[AppsListData]:
+        """List the published apps visible to you in this environment. Optional organization context must be one you actively belong to.
+
+        Requires scope `account:apps:read` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: read.
+
+        ``GET /me/apps`` · action ``account.apps.list``
+        Scope ``account:apps:read`` · danger: read.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.apps.list"], (), query, approval=approval, approval_id=approval_id, headers=headers)
+
+
 class DevicesMethods:
     """``devices.*``"""
 
@@ -207,6 +307,38 @@ class DevicesMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ACCOUNT_OPERATIONS["account.devices.remove"], (device_id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class EmailConfirmationMethods:
+    """``email.confirmation.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def send(self, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[EmailConfirmationSendData]: ...
+
+    @overload
+    def send(self, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[EmailConfirmationSendData] | PendingApprovalResult[EmailConfirmationSendData]: ...
+
+    def send(self, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[EmailConfirmationSendData] | PendingApprovalResult[EmailConfirmationSendData]:
+        """Mail yourself a link that confirms your email address.
+
+        Requires scope `account:profile:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: write.
+
+        ``POST /me/email/confirmation`` · action ``account.email.confirmation.send``
+        Scope ``account:profile:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.email.confirmation.send"], (), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class EmailMethods:
+    """``email.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+        self.confirmation = EmailConfirmationMethods(core)
 
 
 class MfaSmsMethods:
@@ -287,6 +419,23 @@ class PasskeysMethods:
         May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
         """
         return self._core.call(ACCOUNT_OPERATIONS["account.passkeys.remove"], (passkey_id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def rename(self, passkey_id: str, body: PasskeysRenameBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Passkey]: ...
+
+    @overload
+    def rename(self, passkey_id: str, body: PasskeysRenameBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Passkey] | PendingApprovalResult[Passkey]: ...
+
+    def rename(self, passkey_id: str, body: PasskeysRenameBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[Passkey] | PendingApprovalResult[Passkey]:
+        """Rename one of your passkeys.
+
+        Requires scope `account:sign_in:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: write.
+
+        ``PATCH /me/passkeys/{passkey_id}`` · action ``account.passkeys.rename``
+        Scope ``account:sign_in:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.passkeys.rename"], (passkey_id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
 class PipesMethods:
@@ -378,6 +527,30 @@ class SessionsMethods:
         return self._core.call(ACCOUNT_OPERATIONS["account.sessions.revoke_others"], (), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class SignInMethodsMethods:
+    """``sign_in_methods.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def disconnect(self, identity_id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def disconnect(self, identity_id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def disconnect(self, identity_id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Disconnect one linked sign-in identity (Google, GitHub, …) from your account — never the last way you can sign in.
+
+        Requires scope `account:sign_in:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: critical.
+
+        ``DELETE /me/sign-in-methods/{identity_id}`` · action ``account.sign_in_methods.disconnect``
+        Scope ``account:sign_in:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.sign_in_methods.disconnect"], (identity_id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 class SocialMethods:
     """``social.*``"""
 
@@ -402,6 +575,88 @@ class SocialMethods:
         return self._core.call(ACCOUNT_OPERATIONS["account.social.unlink"], (provider,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
 
 
+class TotpMethods:
+    """``totp.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def remove(self, factor_id: str, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def remove(self, factor_id: str, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def remove(self, factor_id: str, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Remove one of your authenticator apps.
+
+        Requires scope `account:sign_in:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: critical.
+
+        ``DELETE /me/two-factor/apps/{factor_id}`` · action ``account.totp.remove``
+        Scope ``account:sign_in:write`` · danger: critical.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.totp.remove"], (factor_id,), None, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def rename(self, factor_id: str, body: TotpRenameBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None]: ...
+
+    @overload
+    def rename(self, factor_id: str, body: TotpRenameBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]: ...
+
+    def rename(self, factor_id: str, body: TotpRenameBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[None] | PendingApprovalResult[None]:
+        """Rename one of your authenticator apps.
+
+        Requires scope `account:sign_in:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: write.
+
+        ``PATCH /me/two-factor/apps/{factor_id}`` · action ``account.totp.rename``
+        Scope ``account:sign_in:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.totp.rename"], (factor_id,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
+class WaitlistsMethods:
+    """``waitlists.*``"""
+
+    def __init__(self, core: ManagementTransport) -> None:
+        self._core = core
+
+    @overload
+    def join(self, program: str, body: WaitlistsJoinBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[WaitlistsJoinData]: ...
+
+    @overload
+    def join(self, program: str, body: WaitlistsJoinBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[WaitlistsJoinData] | PendingApprovalResult[WaitlistsJoinData]: ...
+
+    def join(self, program: str, body: WaitlistsJoinBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[WaitlistsJoinData] | PendingApprovalResult[WaitlistsJoinData]:
+        """Join a published service waitlist with your verified email. Does not buy a plan or grant access.
+
+        Requires scope `account:waitlists:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: write.
+
+        ``POST /me/services/{program}/waitlist`` · action ``account.waitlists.join``
+        Scope ``account:waitlists:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.waitlists.join"], (program,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+    @overload
+    def leave(self, program: str, body: WaitlistsLeaveBody, *, approval: Literal["wait"] = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[WaitlistsLeaveData]: ...
+
+    @overload
+    def leave(self, program: str, body: WaitlistsLeaveBody, *, approval: Literal["return"], idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[WaitlistsLeaveData] | PendingApprovalResult[WaitlistsLeaveData]: ...
+
+    def leave(self, program: str, body: WaitlistsLeaveBody, *, approval: ApprovalMode = "wait", idempotency_key: str | None = None, approval_id: str | None = None, headers: Mapping[str, str] | None = None) -> ApiResponse[WaitlistsLeaveData] | PendingApprovalResult[WaitlistsLeaveData]:
+        """Withdraw your own feature interest or beta application for a team. Active grants are managed by the service.
+
+        Requires scope `account:waitlists:write` on an access token you delegated; it acts on your own account only. No management key is accepted. Danger: write.
+
+        ``POST /me/services/{program}/waitlist/leave`` · action ``account.waitlists.leave``
+        Scope ``account:waitlists:write`` · danger: write.
+        May be held for approval (``202 approval_required``): waited on unless ``approval="return"``.
+        """
+        return self._core.call(ACCOUNT_OPERATIONS["account.waitlists.leave"], (program,), body, approval=approval, idempotency_key=idempotency_key, approval_id=approval_id, headers=headers)
+
+
 # ── Client ────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -423,11 +678,16 @@ class AccountClient(ManagementClient):
         self.action_approvals = ActionApprovalsMethods(core)
         self.api_keys = ApiKeysMethods(core)
         self.applications = ApplicationsMethods(core)
+        self.apps = AppsMethods(core)
         self.devices = DevicesMethods(core)
+        self.email = EmailMethods(core)
         self.mfa = MfaMethods(core)
         self.organizations = OrganizationsMethods(core)
         self.passkeys = PasskeysMethods(core)
         self.pipes = PipesMethods(core)
         self.profile = ProfileMethods(core)
         self.sessions = SessionsMethods(core)
+        self.sign_in_methods = SignInMethodsMethods(core)
         self.social = SocialMethods(core)
+        self.totp = TotpMethods(core)
+        self.waitlists = WaitlistsMethods(core)

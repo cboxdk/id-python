@@ -17,6 +17,7 @@ from .claims import (
     roles,
 )
 from .client import CboxIdClient
+from .decisions import PermissionDecision
 from .errors import (
     AuthenticationError,
     CboxIdError,
@@ -53,6 +54,7 @@ from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_standard_webhook, verify_webhook
 
 __all__ = [
+    "PermissionDecision",
     "FEATURE_FLAGS_SCOPE",
     "PipeLeaseDeniedError",
     "PipeLeaseError",

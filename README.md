@@ -241,8 +241,7 @@ access token's payload on a resource server:
 ```python
 from cbox_id import OrganizationRole, has_permission, is_support_session, organization
 
-if not has_permission(payload, "invoices:create"):
-    abort(403)
+show_create_hint = has_permission(payload, "invoices:create")
 
 org = organization(user)
 if org and org.role is OrganizationRole.OWNER:
@@ -251,6 +250,8 @@ if org and org.role is OrganizationRole.OWNER:
 
 Matching is exact — `invoices:*` does not grant `invoices:delete`. An `org_role` this SDK
 version does not recognise reads as `None`, never as a tier it would have to guess.
+These token snapshots are presentation hints. Protected operations require the fresh
+`client.check_permissions` decision described below; hiding a control is not authorization.
 
 ### Feature flags
 
@@ -348,6 +349,24 @@ Your app declares its authorization **roles** and **permissions** in code and pu
 that catalog to Cbox ID on deploy. Cbox ID owns identity and who holds which role; your
 app owns what a role *means*. Publishing is idempotent — an unchanged catalog is a
 server-side no-op.
+
+Publication verifies the server's client, version and full catalog checksum. It
+does not assign roles; expansions of existing roles await explicit activation.
+Token claims describe a snapshot, not a current authorization decision. Use a fresh
+server decision on each protected request and when human-initiated queued work starts:
+
+```python
+decision = client.check_permissions(
+    access_token, authenticated_subject, selected_organization, ["invoices:create"]
+)
+if not decision.allowed():
+    raise PermissionError("Forbidden")
+```
+
+Derive the subject from verified authentication and authorize the organization
+selection. Apply resource ownership and organization filters inside your app too.
+Shared organization Admin is not app Admin. Decisions are not positively cached;
+redirects, mismatched responses and unavailable decisions fail closed.
 
 ```python
 from cbox_id import AuthzManifest

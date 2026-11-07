@@ -1,0 +1,9 @@
+{
+  "upstream_head": "eb8dd66ae3d8579c93885e4d11590b59ebb7425a",
+  "upstream_branch": "main",
+  "target_version": "0.12.0",
+  "status": "unpublished candidate based on actual upstream history",
+  "source_manifest": "evidence/id-python-final-source-hashes.json",
+  "publication_parent": "fa058d17fd9476a015d66f0fe8c4253509af07bf",
+  "restored_public_files": []
+}

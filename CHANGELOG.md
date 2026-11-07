@@ -3,7 +3,21 @@
 All notable changes to `cbox-id-client` are recorded here. Earlier releases are described
 by their tags and commit history.
 
-## [Unreleased]
+## [0.12.0] — prepared candidate, not published
+
+### Upgrade
+
+Team.remove now requires TeamRemoveBody with roles_version. Use role arrays and current CAS values for replacements, refresh on conflict, and enforce resource authorization in your application.
+
+### Added
+
+- `Client.check_permissions()` and immutable `PermissionDecision` values for current server authorization, bound to the exact subject, organization and app. Each call checks current authority and refuses malformed, redirected, oversized or unavailable responses.
+- Updated typed management clients for multiple app roles, independent role and environment-access versions, scoped invitations and nullable member email.
+
+### Changed
+
+- Manifest publication requires the submitted client, version and checksum in a complete acknowledgement, with valid publication counts. Definitions and manual access assignments remain separate.
+- Workspace member removal requires `roles_version` and removes native ID app roles only. Role edits require `roles` and `roles_version`; environment access uses its separate version.
 
 ## [0.11.0] - 2026-10-10
 

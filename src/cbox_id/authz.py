@@ -141,6 +141,10 @@ class AuthzManifest:
         """Whether nothing has been declared yet."""
         return not self._permissions and not self._roles
 
+    def checksum(self) -> str:
+        """Full canonical checksum used to bind the server's publication acknowledgement."""
+        return hashlib.sha256(_canonical_json(self._permissions, self._roles).encode()).hexdigest()
+
 
 def _require_bool(value: object, what: str) -> None:
     """Refuse a flag that is not a real ``bool``.
