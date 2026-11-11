@@ -5,9 +5,13 @@ Generated from the OpenAPI documents the server publishes (see ``openapi/`` and
 
 - :class:`EnvironmentClient`: one environment's tenancy, on its own host (``cbid_env_…``
   key or a delegated access token).
-- :class:`WorkspaceClient`: the workspace above its environments (``cbid_ws_…`` key).
+- :class:`OrganizationClient` (also :class:`WorkspaceClient`, its old name): the
+  organization above its environments (``cbid_org_…`` or ``cbid_ws_…`` key).
 - :class:`PlatformClient`: the deployment itself, for operators (delegated token only).
 - :class:`AccountClient`: a person's own account (delegated token only).
+
+Every client calls ``{host}/api/v1`` by default. Give it ``api_url="https://api.cboxid.com"``
+to call Cbox ID's ``/v1`` API instead, with the same methods.
 
 Server-side code only: every client holds a management credential. Schema and operation
 types live in the plane's module, e.g. ``cbox_id.management.generated.environment.App``.
@@ -60,7 +64,9 @@ from .models import (
     PendingApproval,
     PendingApprovalResult,
     Plane,
+    V1Route,
 )
+from .organization import OrganizationClient
 from .transport import ManagementTransport, RetryOptions, retry_after_seconds
 
 __all__ = [
@@ -94,12 +100,14 @@ __all__ = [
     "ManagementNetworkError",
     "ManagementTransport",
     "OperationSpec",
+    "OrganizationClient",
     "Pagination",
     "PendingApproval",
     "PendingApprovalResult",
     "Plane",
     "PlatformClient",
     "RetryOptions",
+    "V1Route",
     "WorkspaceClient",
     "account_api",
     "audit_event_document",

@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from .errors import AuthenticationError, ConfigurationError
+from .ids import same_id
 from .models import OrganizationRole
 
 
@@ -93,9 +94,10 @@ def _parse(
         data.get("mode") != "rbac"
         or not isinstance(who, dict)
         or who.get("type") != "user"
-        or who.get("id") != subject
+        # The ids may come back prefixed (`usr_…`, `org_…`): the same object as the raw ones.
+        or not same_id(who.get("id"), subject)
         or "organization" not in data
-        or data["organization"] != organization
+        or not _same_organization(data["organization"], organization)
         or data.get("client_id") != client_id
         or type(data.get("organization_active")) is not bool
         or type(data.get("allowed")) is not bool
@@ -127,3 +129,9 @@ def _parse(
     if data["allowed"] != decision.allowed():
         raise AuthenticationError("Permission decision result is inconsistent.")
     return decision
+
+
+def _same_organization(answered: Any, asked: str | None) -> bool:
+    if asked is None:
+        return answered is None
+    return isinstance(answered, str) and same_id(answered, asked)

@@ -62,6 +62,14 @@ _APPROVAL_MOUNT: dict[str, str] = {
     "account": "/me",
 }
 
+#: Where each plane polls an approval on the ``/v1`` API (``api_url``), relative to ``/v1``.
+_V1_APPROVALS: dict[str, str] = {
+    "environment": "/approvals",
+    "workspace": "/approvals",
+    "platform": "/admin/approvals",
+    "account": "/me/approvals",
+}
+
 _WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 #: How many approvals one call will go through before giving up (a policy loop guard).
@@ -107,22 +115,22 @@ def retry_after_seconds(headers: httpx.Headers) -> float | None:
     return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
 
 
-def _normalize_base_url(raw: str) -> str:
+def _normalize_base_url(raw: str, option: str = "base_url", version: str = "/api/v1") -> str:
     parts = urlsplit(raw)
 
     if parts.scheme == "" or parts.hostname is None:
-        raise ConfigurationError("Management client `base_url` is not a valid URL.")
+        raise ConfigurationError(f"Management client `{option}` is not a valid URL.")
 
     loopback = parts.hostname in _LOOPBACK
 
     if parts.scheme != "https" and not (parts.scheme == "http" and loopback):
         # Every request carries a management credential. Over http a network attacker reads it.
         raise ConfigurationError(
-            f"Management client `base_url` must be https (got {parts.scheme}://{parts.hostname})."
+            f"Management client `{option}` must be https (got {parts.scheme}://{parts.hostname})."
         )
 
     path = parts.path.rstrip("/")
-    path = path if path.endswith("/api/v1") else f"{path}/api/v1"
+    path = path if path.endswith(version) else f"{path}{version}"
 
     return f"{parts.scheme}://{parts.netloc}{path}"
 
@@ -172,6 +180,13 @@ def _read_json(response: httpx.Response) -> Any:
         return None
 
 
+def _path_value(op: OperationSpec, name: str, value: object) -> str:
+    if not isinstance(value, str) or value == "":
+        raise TypeError(f"{op.action or op.path}: missing path parameter `{name}`.")
+
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class _Held:
     approval: PendingApproval
@@ -202,6 +217,7 @@ class ManagementTransport:
         plane: Plane,
         *,
         base_url: str | None = None,
+        api_url: str | None = None,
         api_key: str | None = None,
         access_token: AccessToken | None = None,
         environment: str | None = None,
@@ -214,7 +230,14 @@ class ManagementTransport:
         transport: httpx.BaseTransport | None = None,
         http_client: httpx.Client | None = None,
     ) -> None:
-        if base_url is None or base_url == "":
+        v1 = api_url is not None and api_url != ""
+
+        if v1 and base_url:
+            raise ConfigurationError(
+                "Pass `base_url` (a host's /api/v1) or `api_url` (the /v1 API), not both."
+            )
+
+        if not v1 and (base_url is None or base_url == ""):
             raise ConfigurationError(
                 f"The {plane} management client needs a `base_url` (the environment's own host)."
             )
@@ -264,12 +287,22 @@ class ManagementTransport:
             if has_key:
                 raise ConfigurationError(
                     "`environment` names the environment for a root access token. A "
+                    "`cbid_env_…` key is bound to its own environment: leave `environment` "
+                    "out."
+                    if v1
+                    else "`environment` names the environment for a root access token. A "
                     "`cbid_env_…` key is bound to its own environment's host: use that host "
                     "as `base_url` instead."
                 )
 
         self.plane: Plane = plane
-        self.base_url = _normalize_base_url(base_url)
+        #: True when the client calls the ``/v1`` API (``api_url``), with its paths and shapes.
+        self.v1 = v1
+        self.base_url = (
+            _normalize_base_url(api_url, "api_url", "/v1")
+            if v1 and api_url is not None
+            else _normalize_base_url(base_url or "")
+        )
         self._api_key = api_key
         self._access_token = access_token
         self._environment = environment
@@ -333,15 +366,27 @@ class ManagementTransport:
         headers: Mapping[str, str] | None = None,
     ) -> ApiResponse[Any] | PendingApprovalResult[Any]:
         """Run one operation. Generated methods call this; so can you, with an OperationSpec."""
-        url = self._url(op, path_args)
+        method, url, moved_query, moved_body = self._target(op, path_args)
         params = None if op.body or not isinstance(input, Mapping) else _query_pairs(input)
-        key = (idempotency_key or str(uuid.uuid4())) if op.method in _WRITE_METHODS else None
+        params = [*(params or []), *moved_query]
+        payload = input if op.body else None
+        has_body = op.body and input is not None
+
+        if moved_body:
+            # A parent the /v1 route takes in the body: the path argument is the authority.
+            if payload is not None and not isinstance(payload, Mapping):
+                raise TypeError(f"{op.action or op.path}: the body must be a mapping on /v1.")
+
+            payload = {**(payload or {}), **moved_body}
+            has_body = True
+
+        key = (idempotency_key or str(uuid.uuid4())) if method in _WRITE_METHODS else None
         request = _Request(
-            method=op.method,
+            method=method,
             url=url,
             params=tuple(params) if params else None,
-            payload=input if op.body else None,
-            has_body=op.body and input is not None,
+            payload=payload,
+            has_body=has_body,
             idempotency_key=key,
             headers=headers,
         )
@@ -376,9 +421,11 @@ class ManagementTransport:
         """Every item of a paged list, fetching pages as the iteration reaches them.
 
         Works for both cursor (``after`` / ``meta.next_cursor``) and numbered (``page`` /
-        ``meta.next_page``) lists.
+        ``meta.next_page``) lists, and for the ``/v1`` list envelope (``has_more`` /
+        ``next_cursor``).
         """
         current: dict[str, Any] = dict(query or {})
+        pagination = op.v1.pagination if self.v1 and op.v1 is not None else op.pagination
 
         while True:
             page = self.call(op, path_args, current, headers=headers)
@@ -391,7 +438,7 @@ class ManagementTransport:
             if not items or meta.get("has_more") is not True:
                 return
 
-            if op.pagination == "page":
+            if pagination == "page":
                 raw = current.get("page", 1)
                 number = raw if isinstance(raw, int) else int(str(raw))
                 next_page = meta.get("next_page")
@@ -446,7 +493,8 @@ class ManagementTransport:
     ) -> ApiResponse[Any] | PendingApprovalResult[Any]:
         """Call a route the generated surface does not cover. ``path`` is relative to ``/api/v1``.
 
-        Writes get an ``Idempotency-Key`` and the approval loop like any operation.
+        With ``api_url``, ``path`` is relative to ``/v1`` instead. Writes get an
+        ``Idempotency-Key`` and the approval loop like any operation.
         """
         op = OperationSpec(
             action=None,
@@ -473,19 +521,43 @@ class ManagementTransport:
 
     # ── Internals ────────────────────────────────────────────────────────────────────────
 
-    def _url(self, op: OperationSpec, path_args: Sequence[str]) -> str:
+    def _target(
+        self, op: OperationSpec, path_args: Sequence[str]
+    ) -> tuple[str, str, list[tuple[str, str]], dict[str, str]]:
+        """The method and URL to call, plus the path arguments the /v1 route moved.
+
+        Without ``api_url`` this is ``op`` exactly as it always was.
+        """
+        if not self.v1 or op.v1 is None:
+            if self.v1 and op.legacy_only:
+                raise ConfigurationError(
+                    f"{op.action or op.path} has no /v1 route; call it on a client without "
+                    "`api_url`."
+                )
+
+            return op.method, self._url(op.path, path_args, op), [], {}
+
+        route = op.v1
+        given = list(path_args)
+        values: dict[str, str] = {}
+
+        for name in op.path_params:
+            values[name] = _path_value(op, name, given.pop(0) if given else "")
+
+        url = self._url(route.path, [values[name] for name in route.path_params], op)
+        query = [(wire, values[name]) for wire, name in route.query_params]
+        body = {wire: values[name] for wire, name in route.body_params}
+
+        return route.method, url, query, body
+
+    def _url(self, path: str, path_args: Sequence[str], op: OperationSpec) -> str:
         args = list(path_args)
-        path = op.path
         start = 0
 
         while (open_at := path.find("{", start)) != -1:
             close_at = path.index("}", open_at)
             name = path[open_at + 1 : close_at]
-            value = args.pop(0) if args else ""
-
-            if not isinstance(value, str) or value == "":
-                raise TypeError(f"{op.action or op.path}: missing path parameter `{name}`.")
-
+            value = _path_value(op, name, args.pop(0) if args else "")
             encoded = quote(value, safe="")
             path = f"{path[:open_at]}{encoded}{path[close_at + 1 :]}"
             start = open_at + len(encoded)
@@ -619,10 +691,17 @@ class ManagementTransport:
 
         body = _read_json(response)
 
-        if not isinstance(body, dict) or body.get("error") != "approval_required":
+        if not isinstance(body, dict):
             return None
 
-        approval = body.get("approval")
+        # /v1 answers with the approval itself (`object: "approval"`); /api/v1 wraps it.
+        approval = (
+            body
+            if self.v1 and body.get("object") == "approval"
+            else body.get("approval")
+            if body.get("error") == "approval_required"
+            else None
+        )
 
         if not isinstance(approval, dict):
             return None
@@ -636,8 +715,12 @@ class ManagementTransport:
             value = approval.get(name)
             return value if isinstance(value, str) else default
 
-        mount = _APPROVAL_MOUNT[self.plane]
-        fallback = f"{self.base_url}{mount}/action-approvals/{quote(approval_id, safe='')}"
+        mount = (
+            _V1_APPROVALS[self.plane]
+            if self.v1
+            else f"{_APPROVAL_MOUNT[self.plane]}/action-approvals"
+        )
+        fallback = f"{self.base_url}{mount}/{quote(approval_id, safe='')}"
 
         return _Held(
             approval=PendingApproval(
@@ -703,6 +786,8 @@ class ManagementTransport:
 
             body = _read_json(response)
             data = body.get("data") if isinstance(body, dict) else None
+            # /api/v1 wraps the approval in `data`; /v1 answers with the object itself.
+            data = data if isinstance(data, dict) or not self.v1 else body
             status = data.get("status") if isinstance(data, dict) else None
 
             if status == "approved":
@@ -729,6 +814,10 @@ class ManagementTransport:
             raise self._error(response)
 
         body = None if response.status_code == 204 else _read_json(response)
+
+        if self.v1:
+            return self._v1_result(response, body, idempotency_key)
+
         envelope = isinstance(body, dict) and "data" in body
         meta = body.get("meta") if isinstance(body, dict) and envelope else None
 
@@ -743,19 +832,44 @@ class ManagementTransport:
             headers=response.headers,
         )
 
+    def _v1_result(
+        self, response: httpx.Response, body: Any, idempotency_key: str | None
+    ) -> ApiResponse[Any]:
+        """A ``/v1`` answer: a list is ``{object: "list", data, has_more, next_cursor}``; an
+        object is not wrapped at all, so ``data`` is the object itself."""
+        listed = isinstance(body, dict) and body.get("object") == "list" and "data" in body
+
+        return ApiResponse(
+            status=response.status_code,
+            data=body["data"] if listed else body,
+            meta={k: v for k, v in body.items() if k != "data"} if listed else None,
+            body=body,
+            replayed=response.headers.get("idempotent-replayed", "").lower() == "true",
+            idempotency_key=idempotency_key,
+            request_id=response.headers.get("x-request-id"),
+            headers=response.headers,
+        )
+
     def _error(self, response: httpx.Response) -> CboxIdApiError:
         body = _read_json(response)
         fields: dict[str, Any] = body if isinstance(body, dict) else {}
         code = fields.get("error")
         code = code if isinstance(code, str) else f"http_{response.status_code}"
-        # A bearer challenge (RFC 6750) says `error_description`, the management envelope `message`.
-        message = fields.get("message")
-
-        if not isinstance(message, str):
-            description = fields.get("error_description")
-            message = (
-                description if isinstance(description, str) else f"HTTP {response.status_code}"
-            )
+        # A bearer challenge (RFC 6750) says `error_description`, the management envelope
+        # `message`, and the /v1 API's RFC 9457 problem `detail` (or at least `title`).
+        message = next(
+            (
+                value
+                for value in (
+                    fields.get("message"),
+                    fields.get("error_description"),
+                    fields.get("detail"),
+                    fields.get("title"),
+                )
+                if isinstance(value, str)
+            ),
+            f"HTTP {response.status_code}",
+        )
 
         errors: dict[str, list[str]] = {}
         raw_errors = fields.get("errors")

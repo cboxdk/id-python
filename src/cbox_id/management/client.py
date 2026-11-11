@@ -24,8 +24,14 @@ class ManagementClient:
         (``https://acme.cboxid.com``) for the environment and account planes, the
         platform-root host for the workspace and platform planes. ``/api/v1`` is appended
         unless it is already there.
-    :param api_key: A management key: ``cbid_env_…`` (environment plane) or ``cbid_ws_…``
-        (workspace plane).
+    :param api_url: Cbox ID's ``/v1`` API instead (``https://api.cboxid.com``; ``/v1`` is
+        appended unless it is already there), in place of ``base_url``. Every plane is
+        served there and the credential decides where a call acts. The methods stay the
+        same: each calls its ``/v1`` route, and the ``/v1`` shapes (an unwrapped object, the
+        ``{object: "list", …}`` envelope, RFC 9457 problems) come back as they do from
+        ``/api/v1``. Left out, nothing changes.
+    :param api_key: A management key: ``cbid_env_…`` (environment plane) or ``cbid_org_…``
+        (organization plane; ``cbid_ws_…`` keys keep working).
     :param access_token: A delegated OAuth access token, or a callable returning one (called
         before every request, so it can refresh). Platform and account planes accept nothing
         else.
@@ -56,6 +62,7 @@ class ManagementClient:
         self,
         *,
         base_url: str | None = None,
+        api_url: str | None = None,
         api_key: str | None = None,
         access_token: AccessToken | None = None,
         environment: str | None = None,
@@ -70,7 +77,8 @@ class ManagementClient:
     ) -> None:
         self.core = ManagementTransport(
             self._plane,
-            base_url=base_url or self._default_base_url,
+            base_url=base_url if api_url else base_url or self._default_base_url,
+            api_url=api_url,
             api_key=api_key,
             access_token=access_token,
             environment=environment,
@@ -90,7 +98,7 @@ class ManagementClient:
 
     @property
     def base_url(self) -> str:
-        """The plane's base URL, ending in ``/api/v1``."""
+        """The plane's base URL, ending in ``/api/v1`` (``/v1`` with ``api_url``)."""
         return self.core.base_url
 
     @overload
@@ -133,7 +141,8 @@ class ManagementClient:
         approval_id: str | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> ApiResponse[Any] | PendingApprovalResult[Any]:
-        """Call a route by method and path (relative to ``/api/v1``): anything not generated."""
+        """Call a route by method and path (relative to ``/api/v1``, or ``/v1`` with
+        ``api_url``): anything not generated."""
         return self.core.request(
             method,
             path,
