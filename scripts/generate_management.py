@@ -7,11 +7,19 @@ The specs are vendored in ``openapi/``; the output is ``src/cbox_id/management/g
                                                        refresh one vendored spec from a live host
     python -m scripts.generate_management --fetch all=https://id.example.com
                                                        refresh all four from one (self-hosted) host
+    python -m scripts.generate_management --fetch v1=https://api.cboxid.com
+                                                       refresh openapi/openapi.json (the /v1 API)
     python -m scripts.generate_management --check      exit 1 when the generated code is stale
 
 A small generator on purpose: the output is meant to be read. It knows exactly the subset of
 JSON Schema the server's spec builder emits, and fails loudly on anything it does not
 understand rather than guessing. The Python twin of id-js's ``scripts/generate-management.ts``.
+
+The four plane documents describe ``{host}/api/v1``, which every client calls by default.
+``openapi/openapi.json`` is the ``/v1`` API (``https://api.cboxid.com/v1``): one document
+for every plane. The generator finds each operation's ``/v1`` route there by its action
+name (``x-action`` / ``x-action-aliases``), or through :data:`V1_OVERRIDES`, and writes it
+into the operation table, so a client given ``api_url`` calls the same method on ``/v1``.
 """
 
 from __future__ import annotations
@@ -88,13 +96,57 @@ METHODS = ("get", "post", "put", "patch", "delete")
 WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 DANGERS = frozenset({"read", "write", "destructive", "critical"})
 
+#: The ``/v1`` document, served at ``https://api.cboxid.com/openapi.json``.
+V1_SPEC = "openapi.json"
+V1_SPEC_PATH = "/openapi.json"
+
+#: The first word of a ``/v1`` operation's tag, per plane (``Organization › Team``).
+V1_TAGS: dict[str, str] = {
+    "environment": "Environment",
+    "workspace": "Organization",
+    "platform": "Admin",
+    "account": "Account",
+}
+
+#: Query parameters that page a ``/v1`` list, never a moved path parameter.
+V1_PAGING = frozenset({"limit", "after", "before", "cursor", "page", "per_page"})
+
+#: Operations the ``/v1`` document does not name by the same action: ``(plane, key)`` →
+#: ``(METHOD, /v1 path)``, or ``None`` when the operation has no ``/v1`` counterpart.
+V1_OVERRIDES: dict[tuple[str, str], tuple[str, str] | None] = {
+    # Every plane polled its own `…/action-approvals/{id}`; /v1 has one approvals resource,
+    # and the credential picks the scope.
+    ("environment", "action_approvals.get"): ("GET", "/v1/approvals/{id}"),
+    ("workspace", "action_approvals.get"): ("GET", "/v1/approvals/{id}"),
+    ("platform", "action_approvals.get"): ("GET", "/v1/admin/approvals/{id}"),
+    ("account", "action_approvals.get"): ("GET", "/v1/me/approvals/{id}"),
+    # An organization's domains are one /v1 resource with SSO's domains.
+    ("environment", "organizations.domains.list"): ("GET", "/v1/organization-domains"),
+    ("environment", "organizations.domains.add"): ("POST", "/v1/organization-domains"),
+    ("environment", "organizations.domains.remove"): ("DELETE", "/v1/organization-domains/{id}"),
+    ("environment", "organizations.domains.verify"): (
+        "POST",
+        "/v1/organization-domains/{id}/verify",
+    ),
+    ("environment", "organizations.domains.capture"): ("PATCH", "/v1/organization-domains/{id}"),
+    ("workspace", "keys.environment.revoke"): ("DELETE", "/v1/environment-keys/{id}"),
+    ("workspace", "team.role"): ("PATCH", "/v1/members/{id}"),
+    ("platform", "platform.organizations.set_status"): ("PATCH", "/v1/admin/organizations/{id}"),
+    # Customer accounts are not created or suspended over /v1.
+    ("platform", "platform.workspaces.create"): None,
+    ("platform", "platform.workspaces.set_status"): None,
+}
+
 #: What a generated module imports, by source. Only the names a module uses are imported.
 IMPORTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("collections.abc", ("Iterator", "Mapping")),
     ("typing", ("Any", "Literal", "TypeAlias", "overload")),
     ("typing_extensions", ("NotRequired", "TypedDict")),
     ("..client", ("ManagementClient",)),
-    ("..models", ("ApiResponse", "ApprovalMode", "OperationSpec", "PendingApprovalResult")),
+    (
+        "..models",
+        ("ApiResponse", "ApprovalMode", "OperationSpec", "PendingApprovalResult", "V1Route"),
+    ),
     ("..transport", ("ManagementTransport",)),
 )
 
@@ -268,10 +320,168 @@ class _Node:
     ops: list[Operation] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class V1Plan:
+    """One operation's ``/v1`` route, as the generated ``V1Route`` will say it."""
+
+    method: str
+    path: str
+    path_params: tuple[str, ...]
+    query_params: tuple[tuple[str, str], ...]
+    body_params: tuple[tuple[str, str], ...]
+    pagination: str | None
+
+
+class V1Index:
+    """The ``/v1`` document, looked up by plane and action name."""
+
+    def __init__(self, spec: Json) -> None:
+        self.spec = spec
+        self.by_action: dict[tuple[str, str], list[tuple[str, str, Json]]] = {}
+        self.by_route: dict[tuple[str, str], Json] = {}
+        #: A route that is not an action is found by its operationId, plane-prefixed on /v1.
+        self.by_operation_id: dict[str, tuple[str, str, Json]] = {}
+
+        for path, raw_item in obj(spec.get("paths")).items():
+            item = obj(raw_item)
+
+            for method in METHODS:
+                op = item.get(method)
+
+                if not isinstance(op, dict):
+                    continue
+
+                self.by_route[(method.upper(), path)] = op
+                tags = [t for t in arr(op.get("tags")) if isinstance(t, str)]
+                plane = tags[0].split(" ")[0] if tags else ""
+                names = [op.get("x-action"), *arr(op.get("x-action-aliases"))]
+
+                for name in names:
+                    if isinstance(name, str):
+                        entry = (method.upper(), path, op)
+                        self.by_action.setdefault((plane, name), []).append(entry)
+
+                if isinstance(op.get("operationId"), str):
+                    self.by_operation_id[op["operationId"]] = (method.upper(), path, op)
+
+    def _deref(self, value: object, kind: str) -> Json:
+        if isinstance(value, dict) and isinstance(value.get("$ref"), str):
+            name = value["$ref"].split("/")[-1]
+            target = obj(obj(self.spec.get("components")).get(kind)).get(name)
+
+            if not isinstance(target, dict):
+                raise GeneratorError(f"openapi.json: unresolved {value['$ref']}")
+
+            return target
+
+        return obj(value)
+
+    def _body_fields(self, op: Json) -> set[str]:
+        if op.get("requestBody") is None:
+            return set()
+
+        body = self._deref(op["requestBody"], "requestBodies")
+        json_body = obj(obj(body.get("content")).get("application/json"))
+        schema = self._deref(json_body.get("schema"), "schemas")
+        fields = set(obj(schema.get("properties")))
+
+        for branch in arr(schema.get("allOf")):
+            fields |= set(obj(self._deref(branch, "schemas").get("properties")))
+
+        return fields
+
+    def route(self, plane: str, op: Operation) -> V1Plan | None:
+        """The ``/v1`` route of ``op``, or ``None`` when it has none (an override says so)."""
+        where = f"{plane} {op.key}"
+        override_key = (plane, op.key)
+
+        if override_key in V1_OVERRIDES:
+            target = V1_OVERRIDES[override_key]
+
+            if target is None:
+                return None
+
+            method, path = target
+            found = self.by_route.get((method, path))
+
+            if found is None:
+                raise GeneratorError(f"openapi.json: {where} overrides to {method} {path}, absent")
+
+            v1_op = found
+        else:
+            hits = self.by_action.get((V1_TAGS[plane], op.action or ""), [])
+
+            if op.action is None and op.operation_id is not None:
+                prefixes = dict.fromkeys((plane, V1_TAGS[plane].lower()))
+                found_ids = [self.by_operation_id.get(f"{p}_{op.operation_id}") for p in prefixes]
+                hits = [hit for hit in found_ids if hit is not None]
+
+            if len(hits) != 1:
+                raise GeneratorError(
+                    f"openapi.json: {where} matches {len(hits)} /v1 operations; "
+                    "add it to V1_OVERRIDES"
+                )
+
+            method, path, v1_op = hits[0]
+
+        parameters = [self._deref(p, "parameters") for p in arr(v1_op.get("parameters"))]
+        placeholders = re.findall(r"\{([^}]+)\}", path)
+        query = [p["name"] for p in parameters if p.get("in") == "query" and "name" in p]
+        body = self._body_fields(v1_op)
+        own = op.path_params
+        filled: dict[str, str] = {}
+        in_query: list[tuple[str, str]] = []
+        in_body: list[tuple[str, str]] = []
+        rest: list[str] = []
+
+        for index, name in enumerate(own):
+            # `/apps/{id}/secrets/{secret_id}`: that `id` is the parent, not the /v1 `{id}`.
+            parent_id = name == "id" and index < len(own) - 1
+
+            if name in placeholders and not parent_id:
+                filled[name] = name
+            elif name in query:
+                in_query.append((name, name))
+            elif name in body:
+                in_body.append((name, name))
+            else:
+                rest.append(name)
+
+        # The object's own id (the last parameter left) fills the /v1 path; a parent left
+        # over is named in the query (`/v1/app-secrets/{id}?app_id=…`).
+        open_slots = [p for p in placeholders if p not in filled]
+
+        if len(rest) < len(open_slots):
+            raise GeneratorError(f"openapi.json: {where}: nothing fills {open_slots}")
+
+        if open_slots:
+            for slot, name in zip(open_slots, rest[-len(open_slots) :], strict=True):
+                filled[slot] = name
+            rest = rest[: -len(open_slots)]
+
+        used = {wire for wire, _ in in_query}
+        spare = [q for q in query if q not in used and q not in V1_PAGING and q not in own]
+
+        for name in rest:
+            if not spare:
+                raise GeneratorError(f"openapi.json: {where}: no place for {name}")
+            in_query.append((spare.pop(0), name))
+
+        return V1Plan(
+            method=method,
+            path=path.removeprefix("/v1"),
+            path_params=tuple(filled[p] for p in placeholders),
+            query_params=tuple(in_query),
+            body_params=tuple(in_body),
+            pagination="cursor" if "after" in query else "page" if "page" in query else None,
+        )
+
+
 class Generator:
-    def __init__(self, spec: Json, config: PlaneConfig) -> None:
+    def __init__(self, spec: Json, config: PlaneConfig, v1: V1Index | None = None) -> None:
         self.spec = spec
         self.config = config
+        self.v1 = v1
         self.blocks: list[str] = []
         self.used: set[str] = set()
         self.imports: set[str] = set()
@@ -801,6 +1011,7 @@ class Generator:
                     f"approval={literal(op.approval)}",
                     f"body={literal(op.input_kind == 'body')}",
                     f"pagination={literal(op.pagination)}",
+                    *self.v1_fields(op),
                 ]
             )
             rows.append(f"    {literal(op.key)}: OperationSpec({spec}),")
@@ -875,7 +1086,7 @@ class Generator:
 
         header = (
             f"# GENERATED by scripts/generate_management.py from openapi/{config.module}.yaml"
-            " — do not edit.\n"
+            f"{' and openapi/' + V1_SPEC if self.v1 is not None else ''} — do not edit.\n"
             "# Regenerate with `python -m scripts.generate_management`.\n"
         )
         module_doc = f'"""{_escape_doc(title)}: typed client, schemas and operation table."""\n'
@@ -901,6 +1112,40 @@ class Generator:
         code = re.sub(r"\n{3,}", "\n\n\n", code).rstrip() + "\n"
 
         return code, operations
+
+    def v1_fields(self, op: Operation) -> list[str]:
+        """``v1=V1Route(…)``, or ``legacy_only=True``, for one row of the operation table."""
+        if self.v1 is None:
+            return []
+
+        plan = self.v1.route(self.config.plane, op)
+
+        if plan is None:
+            return ["legacy_only=True"]
+
+        self.use("V1Route")
+
+        def names(values: tuple[str, ...]) -> str:
+            joined = ", ".join(literal(v) for v in values)
+            return f"({joined},)" if len(values) == 1 else f"({joined})"
+
+        def pairs(values: tuple[tuple[str, str], ...]) -> str:
+            joined = ", ".join(f"({literal(wire)}, {literal(name)})" for wire, name in values)
+            return f"({joined},)" if len(values) == 1 else f"({joined})"
+
+        route = [f"method={literal(plan.method)}", f"path={literal(plan.path)}"]
+        route.append(f"path_params={names(plan.path_params)}")
+
+        if plan.query_params:
+            route.append(f"query_params={pairs(plan.query_params)}")
+
+        if plan.body_params:
+            route.append(f"body_params={pairs(plan.body_params)}")
+
+        if plan.pagination is not None:
+            route.append(f"pagination={literal(plan.pagination)}")
+
+        return [f"v1=V1Route({', '.join(route)})"]
 
     def response_types(self, op: Operation, base: str) -> tuple[str, str | None]:
         """The type of ``data`` in the response, and of one item when the list is paged."""
@@ -1121,14 +1366,14 @@ class Result:
     skipped: list[str]
 
 
-def generate_plane(spec: Json, config: PlaneConfig) -> Result:
-    """Generate one plane's client module from its parsed spec."""
+def generate_plane(spec: Json, config: PlaneConfig, v1: V1Index | None = None) -> Result:
+    """Generate one plane's client module from its parsed spec (and the ``/v1`` document)."""
     version = spec.get("openapi")
 
     if not isinstance(version, str) or not version.startswith("3."):
         raise GeneratorError(f"{config.module}: not an OpenAPI 3 document")
 
-    generator = Generator(spec, config)
+    generator = Generator(spec, config, v1)
     code, operations = generator.render()
 
     return Result(code=code, operations=len(operations), skipped=generator.skipped)
@@ -1137,11 +1382,12 @@ def generate_plane(spec: Json, config: PlaneConfig) -> Result:
 def generate_all(root: Path = ROOT) -> dict[Path, Result]:
     """Generate every plane from the vendored specs in ``openapi/``, keyed by output path."""
     results: dict[Path, Result] = {}
+    v1 = V1Index(json.loads((root / "openapi" / V1_SPEC).read_text("utf-8")))
 
     for config in PLANES:
         spec = load_spec((root / "openapi" / f"{config.module}.yaml").read_text("utf-8"))
         out = root / "src" / "cbox_id" / "management" / "generated" / f"{config.module}.py"
-        results[out] = generate_plane(spec, config)
+        results[out] = generate_plane(spec, config, v1)
 
     return results
 
@@ -1166,6 +1412,24 @@ def fetch_spec(config: PlaneConfig, target: str) -> None:
     print(f"fetched {config.module} <- {url}")
 
 
+def fetch_v1_spec(target: str) -> None:
+    import httpx
+
+    url = target if target.endswith(".json") else f"{target.rstrip('/')}{V1_SPEC_PATH}"
+    response = httpx.get(url, headers={"Accept": "application/json"})
+
+    if response.status_code != 200:
+        raise GeneratorError(f"GET {url} answered {response.status_code}")
+
+    parsed = json.loads(response.text)
+
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("openapi"), str):
+        raise GeneratorError(f"GET {url} did not return an OpenAPI document")
+
+    (SPEC_DIR / V1_SPEC).write_text(response.text, "utf-8")
+    print(f"fetched v1 <- {url}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m scripts.generate_management")
     parser.add_argument("--check", action="store_true", help="exit 1 when generated code is stale")
@@ -1174,7 +1438,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="append",
         default=[],
         metavar="PLANE=URL",
-        help="refresh a vendored spec from a running server first (PLANE may be `all`)",
+        help="refresh a vendored spec from a running server first (PLANE may be `all` or `v1`)",
     )
     options = parser.parse_args(argv)
 
@@ -1186,10 +1450,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "--fetch takes plane=url, e.g. --fetch environment=https://acme.cboxid.com"
             )
 
+        if plane == "v1":
+            fetch_v1_spec(url)
+            continue
+
         configs = [p for p in PLANES if plane in ("all", p.plane)]
 
         if not configs:
-            parser.error(f"unknown plane {plane}; use {', '.join(p.plane for p in PLANES)} or all")
+            known = ", ".join(p.plane for p in PLANES)
+            parser.error(f"unknown plane {plane}; use {known}, all or v1")
 
         for config in configs:
             fetch_spec(config, url)

@@ -440,6 +440,29 @@ Switching scheme keeps the secret: a hex Cbox secret is used as `whsec_` + base6
 and both forms verify here. Update the receiver before you switch the endpoint
 (`env.webhooks.signature_scheme.change(id, {"signature_scheme": "standard_webhooks"})`).
 
+### Event names and ids
+
+Cbox ID is moving its event types to `id.*` names: `organization.member_added` becomes
+`id.organization.member_added`, and `user.login` becomes `id.user.signed_in`. For a while a
+delivery can carry either, so compare names with `same_event()` rather than `==`, or key
+your handlers by one form:
+
+```python
+from cbox_id import legacy_event_name, raw_id, same_event
+
+event = json.loads(raw_body)
+
+if same_event(event["type"], "organization.member_added"):
+    ...
+
+handler = HANDLERS.get(legacy_event_name(event["type"]))  # keyed by today's names
+```
+
+Object ids are moving to prefixed public ids (`org_01J9Z…`, `usr_01J9Z…`) in the API and
+webhooks. Token claims (`sub`, `org`) keep the raw id. `raw_id("org_01J9Z…")` gives the raw
+id your mirror is keyed on, and `same_id(a, b)` says whether two ids name the same object in
+either spelling. Only `<prefix>_<ULID>` is unwrapped; any other id is compared exactly.
+
 ## Management API
 
 `cbox_id.management` is a typed client for Cbox ID's management planes. It is generated from
@@ -450,7 +473,7 @@ credential.
 | Client | Plane | Credential | `base_url` |
 | --- | --- | --- | --- |
 | `EnvironmentClient` | One environment's tenancy: organizations, users, apps, roles, SSO, audit logs… | `cbid_env_…` key, or a delegated access token | The environment's own host, or the platform root with `environment` |
-| `WorkspaceClient` | The workspace above its environments: projects, environments, team, keys | `cbid_ws_…` key, or a person's root token | `https://api.cboxid.com` (default) |
+| `OrganizationClient` (`WorkspaceClient`) | The organization above its environments: projects, environments, team, keys | `cbid_org_…` or `cbid_ws_…` key, or a person's root token | `https://api.cboxid.com` (default) |
 | `PlatformClient` | The deployment itself, for operators | Delegated operator token only | `https://api.cboxid.com` (default) |
 | `AccountClient` | A person's own account | Delegated token only | The environment's own host |
 
@@ -463,6 +486,39 @@ Method names are the server's action names: `apps.secrets.rotate` is
 editor check the keys.
 
 The client is synchronous, on `httpx`, like the rest of this package.
+
+### The /v1 API (`api_url`)
+
+Cbox ID now serves every plane on one host, `https://api.cboxid.com/v1`, and the credential
+decides where a call acts. Pass `api_url` in place of `base_url` to use it:
+
+```python
+from cbox_id.management import EnvironmentClient, OrganizationClient
+
+env = EnvironmentClient(api_url="https://api.cboxid.com", api_key=os.environ["CBOX_ID_ENV_KEY"])
+org = OrganizationClient(api_url="https://api.cboxid.com", api_key=os.environ["CBOX_ID_ORG_KEY"])
+```
+
+The methods do not change. Each one calls its `/v1` route: a child is addressed directly
+(`env.members.remove(org_id, user_id)` is `DELETE /v1/organization-memberships/{user_id}
+?organization_id=…`), and the client moves the parent into the query or the body for you.
+The `/v1` shapes come back the way the old ones did: an object is not wrapped, so `data` is
+the object; a list's `data` is its items and `meta` holds `has_more` and `next_cursor`, which
+`list_all()` follows; an RFC 9457 problem raises the same `CboxIdApiError`, with its `detail`
+as the message. `request(method, path)` takes a path relative to `/v1`. The two
+`platform.workspaces.*` actions have no `/v1` route and raise `ConfigurationError` on a
+client given `api_url`.
+
+Without `api_url` every client calls `{host}/api/v1` exactly as before; Cbox ID keeps
+answering there, with `Deprecation` and `Sunset` headers, until its callers have moved.
+
+`CboxIdConfig(api_url="https://api.cboxid.com")` does the same for the calls `CboxIdClient`
+makes itself: the manifest push goes to `/v1/app-manifests` and Pipes leases to
+`/v1/pipe-leases`. Sign-in and every `/oauth/*` call stay on the issuer.
+
+Cbox ID calls the customer account an organization. `OrganizationClient` is
+`WorkspaceClient` under that name (`org.organization.get()` is `org.workspace.get()`), and
+takes a `cbid_org_…` key; `cbid_ws_…` keys keep working.
 
 ### Create an app and rotate its secret
 
@@ -695,7 +751,9 @@ The specs are vendored in `openapi/`. `python -m scripts.generate_management` (w
 extra installed) regenerates `src/cbox_id/management/generated/` from them, and
 `python -m scripts.generate_management --fetch environment=https://acme.cboxid.com` (or
 `workspace=`, `platform=`, `account=`, `all=`) refreshes a vendored spec from a running server
-first. `--check` exits non-zero when the generated code is stale, and the test suite fails
+first. `openapi/openapi.json` is the `/v1` document (`--fetch v1=https://api.cboxid.com`); the
+generator finds each operation's `/v1` route there by its action name and writes it into the
+operation table (`ENVIRONMENT_OPERATIONS["apps.get"].v1`). `--check` exits non-zero when the generated code is stale, and the test suite fails
 when the generated code and the vendored specs disagree.
 
 ## Security & scope

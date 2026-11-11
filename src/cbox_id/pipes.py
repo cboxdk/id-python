@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from ._api import v1_base_url
 from .errors import (
     PipeLeaseDeniedError,
     PipeLeaseError,
@@ -101,8 +102,11 @@ class PipesClient:
         client_id: str | None = None,
         http_client: httpx.Client | None = None,
         timeout: float = 10.0,
+        api_url: str | None = None,
     ) -> None:
         self._issuer = issuer.rstrip("/")
+        #: `{api_url}/v1` when leasing from the /v1 API (`POST /v1/pipe-leases`).
+        self._v1 = v1_base_url(api_url) if api_url else None
         self._access_token = access_token
         self._client_id = client_id
         self._http = http_client or httpx.Client(timeout=timeout)
@@ -132,8 +136,15 @@ class PipesClient:
         if user_id is not None:
             payload["user_id"] = user_id
 
+        if self._v1 is not None:
+            # On the /v1 API a lease is a resource of its own, with the provider in the body.
+            url = f"{self._v1}/pipe-leases"
+            payload = {"provider": str(provider), **payload}
+        else:
+            url = f"{self._issuer}/api/v1/vault/pipes/{quote(provider, safe='')}/token"
+
         response = self._http.post(
-            f"{self._issuer}/api/v1/vault/pipes/{quote(provider, safe='')}/token",
+            url,
             json=payload,
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
         )
@@ -181,7 +192,8 @@ class PipesClient:
 def _lease_error(response: httpx.Response, body: dict[str, Any]) -> PipeLeaseError:
     status = response.status_code
     error = body.get("error") if isinstance(body.get("error"), str) else None
-    raw_message = body.get("message")
+    # `message` from /api/v1; an RFC 9457 problem's `detail` from /v1.
+    raw_message = body.get("message") or body.get("detail")
     message = (
         raw_message
         if isinstance(raw_message, str) and raw_message

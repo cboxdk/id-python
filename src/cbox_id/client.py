@@ -15,6 +15,7 @@ import jwt
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from . import claims as _claims
+from ._api import v1_base_url
 from .authz import AuthzManifest
 from .decisions import PermissionDecision, request_decision
 from .errors import (
@@ -69,6 +70,8 @@ class CboxIdClient:
             raise ConfigurationError("Cbox ID config `client_id` is required.")
         if not config.redirect_uri:
             raise ConfigurationError("Cbox ID config `redirect_uri` is required.")
+        if config.api_url:
+            v1_base_url(config.api_url)
 
         self._config = config
         self._http = http_client or httpx.Client(timeout=config.timeout_seconds)
@@ -372,6 +375,7 @@ class CboxIdClient:
                 self._lease_token,
                 client_id=self._config.client_id,
                 http_client=self._http,
+                api_url=self._config.api_url,
             )
         return self._pipes
 
@@ -545,7 +549,8 @@ class CboxIdClient:
 
         Run this on deploy. It mints a client-credentials token with the
         ``apps.manifest`` scope, then POSTs the manifest to
-        ``{issuer}/api/v1/apps/manifest``. The app owns what roles mean; Cbox ID owns
+        ``{issuer}/api/v1/apps/manifest`` (``{api_url}/v1/app-manifests`` when the config sets
+        ``api_url``). The app owns what roles mean; Cbox ID owns
         who holds them. Republishing an unchanged catalog is a server-side no-op.
 
         Returns the server's sync summary (``unchanged``, ``roles_declared``,
@@ -558,7 +563,11 @@ class CboxIdClient:
             )
 
         token = self.machine_token(scopes=["apps.manifest"])
-        url = f"{self._config.issuer.rstrip('/')}/api/v1/apps/manifest"
+        url = (
+            f"{v1_base_url(self._config.api_url)}/app-manifests"
+            if self._config.api_url
+            else f"{self._config.issuer.rstrip('/')}/api/v1/apps/manifest"
+        )
         try:
             response = self._http.post(
                 url,

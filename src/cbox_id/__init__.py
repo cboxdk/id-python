@@ -31,7 +31,16 @@ from .errors import (
     PipeReauthorizationRequiredError,
     PipeTemporarilyUnavailableError,
 )
+from .events import (
+    EVENT_PREFIX,
+    RENAMED_EVENTS,
+    current_event_name,
+    event_name_aliases,
+    legacy_event_name,
+    same_event,
+)
 from .frontend import FrontendClient, FrontendConfig, FrontendSession
+from .ids import is_prefixed_id, raw_id, same_id
 from .legacy import LegacyUser, handle_legacy_login
 from .models import (
     ActiveOrganization,
@@ -54,6 +63,15 @@ from .pkce import challenge, create_verifier, random_token
 from .webhook import verify_standard_webhook, verify_webhook
 
 __all__ = [
+    "EVENT_PREFIX",
+    "RENAMED_EVENTS",
+    "current_event_name",
+    "event_name_aliases",
+    "is_prefixed_id",
+    "legacy_event_name",
+    "raw_id",
+    "same_event",
+    "same_id",
     "PermissionDecision",
     "FEATURE_FLAGS_SCOPE",
     "PipeLeaseDeniedError",

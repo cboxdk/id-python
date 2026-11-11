@@ -29,6 +29,31 @@ T = TypeVar("T")
 
 
 @dataclass(frozen=True, slots=True)
+class V1Route:
+    """Where an operation lives on Cbox ID's ``/v1`` API (``https://api.cboxid.com/v1``).
+
+    Used only when a client is given ``api_url``. The ``/v1`` API addresses a child object
+    directly (``DELETE /v1/organization-memberships/{id}?organization_id=…`` rather than
+    ``DELETE /organizations/{organization_id}/members/{user_id}``), so some of an
+    operation's own path parameters move: into the ``/v1`` path, the query string or the
+    JSON body. The method keeps taking them in the same order either way.
+    """
+
+    method: HttpMethod
+    #: Path relative to ``/v1``, with ``{param}`` placeholders.
+    path: str
+    #: The operation's own path parameter names that fill the ``/v1`` placeholders, in order.
+    path_params: tuple[str, ...]
+    #: ``(name on /v1, own name)`` for each own path parameter the ``/v1`` route takes in
+    #: the query string, e.g. ``("app_id", "id")``: the app is the parent, named in the query.
+    query_params: tuple[tuple[str, str], ...] = ()
+    #: ``(name on /v1, own name)`` for each own path parameter the ``/v1`` route takes in the
+    #: JSON body.
+    body_params: tuple[tuple[str, str], ...] = ()
+    pagination: Pagination | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class OperationSpec:
     """What the generator knows about one operation.
 
@@ -53,6 +78,12 @@ class OperationSpec:
     #: Whether the input travels as a JSON body (otherwise as the query string).
     body: bool
     pagination: Pagination | None
+    #: The same operation on the ``/v1`` API, for a client given ``api_url``. ``None`` on an
+    #: operation you build yourself: its ``path`` is then taken as relative to ``/v1``.
+    v1: V1Route | None = None
+    #: True when the operation has no ``/v1`` counterpart: it only works on
+    #: ``{host}/api/v1``, so a client given ``api_url`` refuses it.
+    legacy_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,11 +111,17 @@ class ApprovalContext:
 
 @dataclass(frozen=True)
 class ApiResponse(Generic[T]):
-    """A successful answer. ``data`` is the envelope's ``data``; ``body`` is the whole document."""
+    """A successful answer. ``data`` is the envelope's ``data``; ``body`` is the whole document.
+
+    On the ``/v1`` API (a client given ``api_url``) a single object is not wrapped, so
+    ``data`` is the object itself; a list's ``data`` is its items and ``meta`` holds the rest
+    (``has_more``, ``next_cursor``).
+    """
 
     status: int
     data: T
-    #: The envelope's ``meta`` (paging, on lists), when there is one.
+    #: The envelope's ``meta`` (paging, on lists), when there is one. On the ``/v1`` API, a
+    #: list's fields besides ``data``: ``object``, ``has_more`` and ``next_cursor``.
     meta: dict[str, Any] | None
     body: Any
     #: True when the server answered from its idempotency store (``Idempotent-Replayed:

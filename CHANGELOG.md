@@ -3,6 +3,23 @@
 All notable changes to `cbox-id-client` are recorded here. Earlier releases are described
 by their tags and commit history.
 
+## [Unreleased]
+
+Cbox ID v3, additively. A client that sets nothing new calls exactly what 0.12.0 called.
+
+### Added
+
+- `api_url` on every management client (`EnvironmentClient(api_url="https://api.cboxid.com", …)`), in place of `base_url`: the same methods call Cbox ID's `/v1` API. Each operation carries its `/v1` route (`OperationSpec.v1`, a `V1Route`), generated from the vendored `openapi/openapi.json`; parents the `/v1` route takes in the query or the body are moved there. The `/v1` shapes (unwrapped objects, the `{object: "list", …}` envelope, RFC 9457 problems, `object: "approval"` holds) come back as the same `ApiResponse`, `CboxIdApiError` and approval flow. `platform.workspaces.create` and `.set_status` have no `/v1` route and are refused on `api_url`.
+- `CboxIdConfig.api_url`: the manifest push goes to `{api_url}/v1/app-manifests` and Pipes leases to `{api_url}/v1/pipe-leases` (the provider in the body). `PipesClient(…, api_url=…)` for a client built by hand.
+- `OrganizationClient`: `WorkspaceClient` under Cbox ID's name for it, with `client.organization` as `client.workspace`. Takes `cbid_org_…` keys.
+- `raw_id()`, `same_id()` and `is_prefixed_id()` for ids that arrive as `org_01J9Z…` or raw.
+- `current_event_name()`, `legacy_event_name()`, `event_name_aliases()` and `same_event()` for event types under their old and their `id.*` names (`user.login` is `id.user.signed_in`).
+
+### Changed
+
+- `check_permissions()` accepts a decision whose subject or organization comes back as a prefixed id for the raw one asked.
+- An error body's RFC 9457 `detail` (or `title`) is used as the message when it carries no `message`, for management calls and Pipes leases.
+
 ## [0.12.0] - 2026-11-07
 
 ### Upgrade

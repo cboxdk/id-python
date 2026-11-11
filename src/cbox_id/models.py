@@ -23,6 +23,10 @@ class CboxIdConfig:
     account_path: str = "/account"
     timeout_seconds: float = 10.0
     cache_ttl_seconds: float = 3600.0
+    # Cbox ID's /v1 API (`https://api.cboxid.com`, with or without `/v1`). Unset, the
+    # manifest push and Pipes leases go to `{issuer}/api/v1` exactly as before; set, they go
+    # to `{api_url}/v1` with its paths. Sign-in and every `/oauth/*` call stay on the issuer.
+    api_url: str | None = None
 
 
 class AuthorizationPrompt(str, Enum):
