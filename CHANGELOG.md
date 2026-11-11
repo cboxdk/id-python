@@ -3,7 +3,7 @@
 All notable changes to `cbox-id-client` are recorded here. Earlier releases are described
 by their tags and commit history.
 
-## [Unreleased]
+## [0.12.1] - 2026-11-11
 
 Cbox ID v3, additively. A client that sets nothing new calls exactly what 0.12.0 called.
 
