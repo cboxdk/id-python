@@ -697,7 +697,7 @@ class ManagementTransport:
         # /v1 answers with the approval itself (`object: "approval"`); /api/v1 wraps it.
         approval = (
             body
-            if body.get("object") == "approval"
+            if self.v1 and body.get("object") == "approval"
             else body.get("approval")
             if body.get("error") == "approval_required"
             else None
@@ -787,7 +787,7 @@ class ManagementTransport:
             body = _read_json(response)
             data = body.get("data") if isinstance(body, dict) else None
             # /api/v1 wraps the approval in `data`; /v1 answers with the object itself.
-            data = data if isinstance(data, dict) else body
+            data = data if isinstance(data, dict) or not self.v1 else body
             status = data.get("status") if isinstance(data, dict) else None
 
             if status == "approved":
